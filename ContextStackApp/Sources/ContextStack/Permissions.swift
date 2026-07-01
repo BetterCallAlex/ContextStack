@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Security
 import UserNotifications
 
 /// Status checks and prompt triggers for every permission the app uses.
@@ -95,5 +96,65 @@ enum Permissions {
     static func openSettings(anchor: String) {
         let url = "x-apple.systempreferences:com.apple.preference.security?" + anchor
         if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+    }
+
+    // ----------------------------------------------------------- diagnostics
+
+    /// How this binary is signed. Ad-hoc signatures change on every rebuild,
+    /// which silently invalidates existing TCC grants — the number-one cause
+    /// of "granted in Settings but the app says no".
+    static func signingSummary() -> String {
+        var codeRef: SecCode?
+        guard SecCodeCopySelf([], &codeRef) == errSecSuccess, let codeRef else {
+            return "unknown"
+        }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(codeRef, [], &staticCode) == errSecSuccess,
+              let staticCode else { return "unknown" }
+        var infoCF: CFDictionary?
+        guard SecCodeCopySigningInformation(
+                staticCode, SecCSFlags(rawValue: kSecCSSigningInformation),
+                &infoCF) == errSecSuccess,
+              let info = infoCF as? [String: Any] else { return "unknown" }
+        let flags = (info[kSecCodeInfoFlags as String] as? NSNumber)?.uint32Value ?? 0
+        if flags & SecCodeSignatureFlags.adhoc.rawValue != 0 {
+            return "ad-hoc — grants break on every rebuild"
+        }
+        if let certs = info[kSecCodeInfoCertificates as String] as? [SecCertificate],
+           let leaf = certs.first,
+           let name = SecCertificateCopySubjectSummary(leaf) as String? {
+            return "signed: \(name)"
+        }
+        return "signed"
+    }
+
+    static var isAdHocSigned: Bool { signingSummary().hasPrefix("ad-hoc") }
+
+    /// Clear this app's own TCC records so the next request captures the
+    /// current signature — the fix for grants that went stale after a
+    /// rebuild. Requires an app relaunch to take full effect.
+    static func resetOwnGrants(completion: @escaping (Bool) -> Void) {
+        guard let bundleID = Bundle.main.bundleIdentifier else {
+            completion(false)
+            return
+        }
+        DispatchQueue.global().async {
+            var allOK = true
+            for service in ["Accessibility", "ScreenCapture", "AppleEvents"] {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+                proc.arguments = ["reset", service, bundleID]
+                proc.standardOutput = FileHandle.nullDevice
+                proc.standardError = FileHandle.nullDevice
+                do {
+                    try proc.run()
+                    proc.waitUntilExit()
+                    if proc.terminationStatus != 0 { allOK = false }
+                } catch {
+                    allOK = false
+                }
+            }
+            DispatchQueue.main.async { completion(allOK) }
+        }
     }
 }

@@ -84,11 +84,28 @@ defaults write cloud.alexrank.ContextStack maxFileBytes -int 524288
 
 Browser bundle-ID tables live in `Sources/ContextStack/Config.swift`.
 
-## Signing / TCC caveat
+## Signing / TCC (the "grants don't stick" trap)
 
-`build-app.sh` signs ad-hoc when `CODESIGN_IDENTITY` is unset. macOS ties
-permission grants to the code signature, so after a rebuild the OS may ask
-again (or need a remove-and-re-add in System Settings). For a stable setup,
-either rebuild rarely and re-grant, or set `CODESIGN_IDENTITY` to a real
-signing identity. Always run the copy in `/Applications`, not the one in
-`build/` — moving the binary after granting also invalidates grants.
+macOS ties every permission grant to the exact code signature. An ad-hoc
+signature changes on every rebuild, which silently invalidates old grants:
+System Settings still shows the toggle as on, but the running app gets
+nothing, and flipping the toggle does **not** help (it never re-captures the
+signature). The fix is a *stable* signing identity:
+
+```sh
+./make-signing-cert.sh   # one-time: self-signed cert "ContextStack Local Signing"
+./build-app.sh           # picks the cert up automatically from then on
+```
+
+Expect one password dialog (trust settings) during cert creation and possibly
+a "codesign wants to access key" dialog on the first build → Always Allow.
+With the stable identity, grants survive rebuilds.
+
+If grants ever go stale anyway (e.g. builds made before the cert existed),
+use **Reset stale grants** in the setup window — it runs
+`tccutil reset Accessibility|ScreenCapture|AppleEvents` for the app's bundle
+ID — then re-grant and relaunch. The setup window footer shows how the
+running binary is signed. Always run the copy in `/Applications`, not the one
+in `build/` — moving the binary after granting also invalidates grants; use
+`rm -rf /Applications/ContextStack.app && cp -R build/ContextStack.app
+/Applications/` when updating.

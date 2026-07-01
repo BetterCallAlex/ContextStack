@@ -17,11 +17,16 @@ cp .build/release/ContextStack "$APP/Contents/MacOS/ContextStack"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ] && security find-identity -v -p codesigning 2>/dev/null \
+        | grep -q "ContextStack Local Signing"; then
+    IDENTITY="ContextStack Local Signing"
+fi
 if [ -z "$IDENTITY" ]; then
-    echo "note: no CODESIGN_IDENTITY set — using ad-hoc signing."
-    echo "      Permission grants may need re-granting after each rebuild."
+    echo "note: no signing identity — using ad-hoc signing. Permission grants"
+    echo "      go stale on every rebuild. Run ./make-signing-cert.sh once to fix."
     IDENTITY="-"
 fi
+echo "signing with: $IDENTITY"
 codesign --force --sign "$IDENTITY" "$APP"
 
 echo

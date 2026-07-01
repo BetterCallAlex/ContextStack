@@ -65,6 +65,7 @@ private struct OnboardingView: View {
     @State private var srOK = Permissions.screenRecordingGranted
     @State private var browserStatuses: [String: Permissions.AutomationStatus] = [:]
     @State private var notifStatus: UNAuthorizationStatus = .notDetermined
+    @State private var resetStatus = ""
     private let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private let installedBrowsers: [(bundleID: String, name: String)] =
@@ -161,11 +162,40 @@ private struct OnboardingView: View {
                     .padding(4)
                 }
 
-                HStack {
-                    Spacer()
-                    Text("Reopen anytime from the menu-bar icon.")
-                        .font(.caption).foregroundColor(.secondary)
+                GroupBox("Granted in System Settings, but still shown as missing here?") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("macOS ties every grant to the exact app signature. If the "
+                             + "app was rebuilt or moved since you granted, the old record "
+                             + "no longer matches — the toggle in System Settings looks on, "
+                             + "but the running app gets nothing, and flipping the toggle "
+                             + "doesn't help. Reset clears ContextStack's permission "
+                             + "records so the next request starts fresh.")
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            Button("Reset stale grants") {
+                                resetStatus = "resetting…"
+                                Permissions.resetOwnGrants { ok in
+                                    resetStatus = ok
+                                        ? "Done — use the Request buttons above, then relaunch the app"
+                                        : "Failed — run in a terminal: tccutil reset Accessibility "
+                                          + (Bundle.main.bundleIdentifier ?? "")
+                                }
+                            }
+                            Text(resetStatus).foregroundColor(.secondary)
+                        }
+                    }
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
                 }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Running from: \(Bundle.main.bundlePath)")
+                    Text("Signature: \(Permissions.signingSummary())")
+                        .foregroundColor(Permissions.isAdHocSigned ? .orange : .secondary)
+                    Text("Reopen this window anytime from the menu-bar icon.")
+                }
+                .font(.caption2).foregroundColor(.secondary)
             }
             .padding(20)
         }
