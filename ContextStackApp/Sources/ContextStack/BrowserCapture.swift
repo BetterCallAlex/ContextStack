@@ -1,0 +1,187 @@
+import AppKit
+
+/// Browser tab capture via Apple Events, mirroring the Hammerspoon spoon:
+/// find the tab by remembered title (fallback: active tab), run JS in it,
+/// fall back to a plain HTTP fetch of the URL.
+enum BrowserCapture {
+    enum Family { case chromium, safari }
+
+    static func family(of entry: HistoryEntry) -> (Family, String)? {
+        if let name = Config.chromiumBundles[entry.bundleID] { return (.chromium, name) }
+        if let name = Config.safariBundles[entry.bundleID] { return (.safari, name) }
+        return nil
+    }
+
+    private static func escAS(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static func runAppleScript(_ source: String) -> NSAppleEventDescriptor? {
+        var error: NSDictionary?
+        guard let script = NSAppleScript(source: source) else { return nil }
+        let result = script.executeAndReturnError(&error)
+        if let error {
+            csLog("AppleScript failed:", error)
+            return nil
+        }
+        return result
+    }
+
+    /// Find the tab matching the remembered window title (the tab may have
+    /// moved or another tab may be active now); fall back to the active tab.
+    static func resolveTab(family: Family, appName: String,
+                           wantedTitle: String) -> (url: String, title: String)? {
+        let titleProp = family == .chromium ? "title" : "name"
+        let activeTab = family == .chromium ? "active tab" : "current tab"
+        let script = """
+        tell application "\(appName)"
+        	set wanted to "\(escAS(wantedTitle))"
+        	set theURL to ""
+        	set theTitle to ""
+        	repeat with w in windows
+        		repeat with t in tabs of w
+        			if (\(titleProp) of t as text) is wanted then
+        				set theURL to URL of t
+        				set theTitle to \(titleProp) of t
+        			end if
+        		end repeat
+        	end repeat
+        	if theURL is "" then
+        		set theURL to URL of \(activeTab) of front window
+        		set theTitle to \(titleProp) of \(activeTab) of front window
+        	end if
+        	return {theURL, theTitle}
+        end tell
+        """
+        guard let result = runAppleScript(script), result.numberOfItems >= 1,
+              let url = result.atIndex(1)?.stringValue, !url.isEmpty else { return nil }
+        let title = result.atIndex(2)?.stringValue ?? ""
+        return (url, title)
+    }
+
+    /// Run JavaScript in the remembered tab (needs "Allow JavaScript from
+    /// Apple Events" enabled in the browser). Returns the result string or nil.
+    static func runTabJS(family: Family, appName: String,
+                         wantedTitle: String, js: String) -> String? {
+        let titleProp = family == .chromium ? "title" : "name"
+        let activeTab = family == .chromium ? "active tab" : "current tab"
+        let execute = family == .chromium
+            ? "execute theTab javascript \"\(escAS(js))\""
+            : "do JavaScript \"\(escAS(js))\" in theTab"
+        let script = """
+        tell application "\(appName)"
+        	set wanted to "\(escAS(wantedTitle))"
+        	set theTab to missing value
+        	repeat with w in windows
+        		repeat with t in tabs of w
+        			if (\(titleProp) of t as text) is wanted then set theTab to t
+        		end repeat
+        	end repeat
+        	if theTab is missing value then set theTab to \(activeTab) of front window
+        	return \(execute)
+        end tell
+        """
+        guard let result = runAppleScript(script),
+              let s = result.stringValue, !s.isEmpty else { return nil }
+        return s
+    }
+
+    /// Convert an HTML string to plain text using macOS textutil.
+    static func htmlToText(_ html: String, cb: @escaping (String?) -> Void) {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".html")
+        do {
+            try html.write(to: tmp, atomically: true, encoding: .utf8)
+        } catch {
+            cb(nil)
+            return
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")
+        proc.arguments = ["-convert", "txt", "-stdout", tmp.path]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        DispatchQueue.global().async {
+            do {
+                try proc.run()
+            } catch {
+                DispatchQueue.main.async { cb(nil) }
+                return
+            }
+            // Read while running so a large output can't fill the pipe buffer.
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            proc.waitUntilExit()
+            try? FileManager.default.removeItem(at: tmp)
+            let out = String(data: data, encoding: .utf8)
+            DispatchQueue.main.async {
+                cb(proc.terminationStatus == 0 && out?.isEmpty == false ? out : nil)
+            }
+        }
+    }
+
+    static func capturePage(_ entry: HistoryEntry, wantHTML: Bool) {
+        guard let (family, appName) = family(of: entry) else { return }
+        let resolved = resolveTab(family: family, appName: appName, wantedTitle: entry.title)
+        let url = resolved?.url
+
+        // Preferred: run JS in the live tab — sees the rendered page,
+        // including logged-in content and SPAs.
+        let js = wantHTML ? "document.documentElement.outerHTML" : "document.body.innerText"
+        if let res = runTabJS(family: family, appName: appName,
+                              wantedTitle: entry.title, js: js) {
+            Delivery.text(entry: entry, kind: wantHTML ? "full HTML" : "page text",
+                          source: url, content: res)
+            return
+        }
+
+        // Fallback: plain fetch of the URL (no login/session, but always works).
+        guard let url, let fetchURL = URL(string: url) else {
+            Delivery.notify("ContextStack",
+                            "Could not get a URL from \(appName) "
+                            + "(check Automation permission for ContextStack)")
+            return
+        }
+        URLSession.shared.dataTask(with: fetchURL) { data, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200, let data,
+                  let body = String(data: data, encoding: .utf8)
+                    ?? String(data: data, encoding: .isoLatin1) else {
+                DispatchQueue.main.async {
+                    Delivery.notify("ContextStack", "Fetch failed (\(status)) for \(url)")
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                if wantHTML {
+                    Delivery.text(entry: entry, kind: "full HTML (fetched)",
+                                  source: url, content: body)
+                } else {
+                    htmlToText(body) { txt in
+                        if let txt {
+                            Delivery.text(entry: entry, kind: "page text (fetched)",
+                                          source: url, content: txt)
+                        } else {
+                            Delivery.text(entry: entry, kind: "raw HTML (fetched)",
+                                          source: url, content: body)
+                        }
+                    }
+                }
+            }
+        }.resume()
+    }
+
+    static func captureLink(_ entry: HistoryEntry) {
+        guard let (family, appName) = family(of: entry) else { return }
+        guard let (url, title) = resolveTab(family: family, appName: appName,
+                                            wantedTitle: entry.title) else {
+            Delivery.notify("ContextStack", "Could not get a URL from \(appName)")
+            return
+        }
+        let label = title.isEmpty ? (entry.title.isEmpty ? url : entry.title) : title
+        Delivery.setClipboard("[\(label)](\(url))")
+        Delivery.notify("ContextStack: link copied", url)
+        Delivery.maybeAutoPaste()
+    }
+}
