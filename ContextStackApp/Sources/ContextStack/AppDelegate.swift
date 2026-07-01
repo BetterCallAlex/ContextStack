@@ -24,8 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "square.stack.3d.up",
-                                           accessibilityDescription: "ContextStack")
+        statusItem.button?.image = IconKit.menuBarImage()
+        statusItem.button?.toolTip = "ContextStack"
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu

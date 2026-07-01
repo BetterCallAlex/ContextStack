@@ -7,10 +7,16 @@ package, AppKit + SwiftUI, macOS 14+.
 
 ```sh
 cd ContextStackApp
-./build-app.sh
-cp -R build/ContextStack.app /Applications/
+./make-signing-cert.sh     # one-time: stable signing identity (see Signing below)
+./build-app.sh install     # build, sign, install to /Applications
 open /Applications/ContextStack.app
 ```
+
+`./build-app.sh` without `install` just produces `build/ContextStack.app`.
+The script assembles and signs in `/tmp` and installs with
+`ditto --noextattr` — both deliberate: iCloud-synced folders (Desktop,
+Documents) stamp xattrs on files that codesign rejects as "detritus", and
+plain `cp` would carry them into `/Applications`.
 
 First launch opens the **Setup window**: live status for every permission with
 Request / Open Settings buttons. Grant **Accessibility** (required), then
@@ -69,6 +75,17 @@ Verify the learner without granting any permissions:
 .build/debug/ContextStack --ranker-selftest
 ```
 
+## The mark
+
+Three rounded "context cards" fanned like a hand of cards, the top one tilted
+with two text lines — a piece of context being picked up. Coral gradient tile
+for the app icon; the menu bar shows the same fan as a monochrome template
+image. Everything is drawn in code (`IconKit.swift`): the `.icns` is rendered
+at build time (`ContextStack --render-icon <dir>` + `iconutil`), the menu-bar
+icon at runtime — the repo carries no binary image assets. To tweak the
+design, edit `IconKit.swift` and rebuild; `--render-icon` also writes
+`preview.png` / `preview-menubar.png` for a quick look.
+
 ## Config
 
 Same knobs as the spoon, via `defaults` (domain `cloud.alexrank.ContextStack`):
@@ -107,5 +124,4 @@ use **Reset stale grants** in the setup window — it runs
 ID — then re-grant and relaunch. The setup window footer shows how the
 running binary is signed. Always run the copy in `/Applications`, not the one
 in `build/` — moving the binary after granting also invalidates grants; use
-`rm -rf /Applications/ContextStack.app && cp -R build/ContextStack.app
-/Applications/` when updating.
+`./build-app.sh install` when updating.

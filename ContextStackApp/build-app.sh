@@ -10,11 +10,21 @@ cd "$(dirname "$0")"
 
 swift build -c release
 
-APP="build/ContextStack.app"
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/ContextStack "$APP/Contents/MacOS/ContextStack"
-cp Resources/Info.plist "$APP/Contents/Info.plist"
+# Assemble and sign in a staging dir OUTSIDE the repo: if the repo lives in
+# an iCloud-synced folder (Desktop/Documents), the file provider keeps
+# stamping com.apple.FinderInfo xattrs on the bundle, which codesign rejects
+# as "detritus". /tmp is never synced.
+STAGE="$(mktemp -d /tmp/contextstack-build.XXXXXX)"
+trap 'rm -rf "$STAGE"' EXIT
+APP_STAGE="$STAGE/ContextStack.app"
+mkdir -p "$APP_STAGE/Contents/MacOS" "$APP_STAGE/Contents/Resources"
+cp .build/release/ContextStack "$APP_STAGE/Contents/MacOS/ContextStack"
+cp Resources/Info.plist "$APP_STAGE/Contents/Info.plist"
+
+# App icon is drawn in code (IconKit.swift) — render + pack it here.
+.build/release/ContextStack --render-icon "$STAGE/AppIcon.iconset"
+rm -f "$STAGE/AppIcon.iconset/preview.png" "$STAGE/AppIcon.iconset/preview-menubar.png"
+iconutil -c icns -o "$APP_STAGE/Contents/Resources/AppIcon.icns" "$STAGE/AppIcon.iconset"
 
 IDENTITY="${CODESIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ] && security find-identity -v -p codesigning 2>/dev/null \
@@ -27,8 +37,25 @@ if [ -z "$IDENTITY" ]; then
     IDENTITY="-"
 fi
 echo "signing with: $IDENTITY"
-codesign --force --sign "$IDENTITY" "$APP"
+xattr -cr "$APP_STAGE" 2>/dev/null || true
+codesign --force --sign "$IDENTITY" "$APP_STAGE"
+codesign --verify --strict "$APP_STAGE"
+echo "signature verified"
 
-echo
-echo "Built: $PWD/$APP"
-echo "Install: cp -R $APP /Applications/   then: open /Applications/ContextStack.app"
+APP="build/ContextStack.app"
+rm -rf "$APP"
+mkdir -p build
+ditto "$APP_STAGE" "$APP"
+
+if [ "${1:-}" = "install" ]; then
+    # Plain cp would drag the sync-service xattrs along and fail strict
+    # verification; --noextattr keeps the installed copy clean.
+    rm -rf /Applications/ContextStack.app
+    ditto --noextattr --noqtn "$APP_STAGE" /Applications/ContextStack.app
+    codesign --verify --strict /Applications/ContextStack.app
+    echo "installed + verified: /Applications/ContextStack.app"
+else
+    echo
+    echo "Built: $PWD/$APP"
+    echo "Install: ./build-app.sh install   (or: ditto --noextattr build/ContextStack.app /Applications/ContextStack.app)"
+fi
