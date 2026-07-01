@@ -59,7 +59,10 @@ clipboard (and in `~/ContextStack/`) ready to paste.
 - **Standalone Swift menu-bar app** (`ContextStackApp/`) — same architecture
   (NSWorkspace focus tracking + Accessibility + Apple Events +
   ScreenCaptureKit), no Hammerspoon dependency, with a setup window that shows
-  live permission status and triggers each grant. See
+  live permission status and triggers each grant. Also learns which capture
+  action you pick per paste-target, source app and project/site, and reorders
+  the action chooser accordingly (on-device online model, event log in
+  Application Support). See
   [ContextStackApp/README.md](ContextStackApp/README.md) for build and
   install. Run one or the other, not both (two ⌃⌥Space bindings would clash).
 

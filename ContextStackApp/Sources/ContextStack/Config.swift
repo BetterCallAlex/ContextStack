@@ -10,6 +10,7 @@ enum Config {
         d.register(defaults: [
             "maxEntries": 7,
             "autoPaste": true,
+            "smartRanking": true,
             "notifyOnCopy": true,
             "maxFileBytes": 256 * 1024,
             "captureDir": NSHomeDirectory() + "/ContextStack",
@@ -24,6 +25,13 @@ enum Config {
     static var autoPaste: Bool {
         get { d.bool(forKey: "autoPaste") }
         set { d.set(newValue, forKey: "autoPaste") }
+    }
+
+    /// Reorder the action chooser by learned pick probability. Picks are
+    /// logged for learning even while this is off.
+    static var smartRanking: Bool {
+        get { d.bool(forKey: "smartRanking") }
+        set { d.set(newValue, forKey: "smartRanking") }
     }
 
     /// Show a notification after each capture.

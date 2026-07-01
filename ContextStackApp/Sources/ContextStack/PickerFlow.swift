@@ -3,12 +3,17 @@ import AppKit
 /// The two-stage picker: recent windows → capture actions for the picked one.
 enum PickerFlow {
     struct Action {
+        let id: ActionID
         let text: String
         let subText: String
         let run: () -> Void
     }
 
     static func showMainPicker() {
+        // Frontmost app right now is where the capture will be pasted —
+        // the strongest ranking signal ("into Claude paste images, into
+        // the terminal paste @paths").
+        let targetBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let entries = FocusTracker.shared.pickerEntries()
         guard !entries.isEmpty else {
             Delivery.notify("ContextStack",
@@ -26,7 +31,7 @@ enum PickerFlow {
             guard let idx else { return }
             let entry = entries[idx]
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                showActions(for: entry)
+                showActions(for: entry, targetBundleID: targetBundleID)
             }
         }
     }
@@ -37,20 +42,57 @@ enum PickerFlow {
         return "window"
     }
 
-    private static func showActions(for entry: HistoryEntry) {
-        let actions = actionsFor(entry)
+    private static func showActions(for entry: HistoryEntry, targetBundleID: String) {
+        let context = RankContext(targetBundleID: targetBundleID,
+                                  sourceBundleID: entry.bundleID,
+                                  kind: kindLabel(entry),
+                                  titleTokens: ActionRanker.tokenize(entry.title),
+                                  hourBucket: RankContext.hourBucket())
+        let actions = ranked(actionsFor(entry), context: context)
         let items = actions.enumerated().map { i, a in
             ChooserItem(text: a.text, subText: a.subText, image: nil, index: i)
         }
         Chooser.shared.show(items: items,
                             placeholder: "\(entry.appName) — \(entry.title)") { idx in
             guard let idx else { return }
+            // Learn from every completed pick, even while smart ranking is
+            // toggled off — the log keeps accumulating either way.
+            ActionRanker.shared.record(context: context,
+                                       presented: actions.map(\.id),
+                                       chosen: actions[idx].id)
             actions[idx].run()
         }
     }
 
+    /// Reorder actions by learned probability (stable: ties keep canonical
+    /// order). The top row is the Enter-Enter default, so a good prediction
+    /// removes the selection step entirely.
+    private static func ranked(_ actions: [Action], context: RankContext) -> [Action] {
+        guard Config.smartRanking, ActionRanker.shared.eventCount > 0 else { return actions }
+        let probs = ActionRanker.shared.probabilities(context: context,
+                                                      presented: actions.map(\.id))
+        let sorted = actions.enumerated()
+            .sorted { a, b in
+                let pa = probs[a.element.id] ?? 0
+                let pb = probs[b.element.id] ?? 0
+                return pa == pb ? a.offset < b.offset : pa > pb
+            }
+            .map(\.element)
+
+        // Mark the top row once the model has real evidence for this app
+        // and actually deviates from the canonical order.
+        guard let top = sorted.first, top.id != actions.first?.id,
+              ActionRanker.shared.samples(forSource: context.sourceBundleID) >= 5,
+              (probs[top.id] ?? 0) > 1.5 / Float(actions.count)
+        else { return sorted }
+        var marked = sorted
+        marked[0] = Action(id: top.id, text: top.text,
+                           subText: top.subText + "  · learned", run: top.run)
+        return marked
+    }
+
     /// Action list per entry type — same set and order as the Hammerspoon
-    /// spoon, so the first row is the smart default (Enter-Enter flow).
+    /// spoon; this canonical order is the cold-start ranking.
     private static func actionsFor(_ entry: HistoryEntry) -> [Action] {
         var acts: [Action] = []
         let isBrowser = BrowserCapture.family(of: entry) != nil
@@ -58,14 +100,17 @@ enum PickerFlow {
 
         if isBrowser {
             acts.append(Action(
+                id: .pageText,
                 text: "Page text",
                 subText: "Readable text of the tab (JS in tab; falls back to fetching the URL)",
                 run: { BrowserCapture.capturePage(entry, wantHTML: false) }))
             acts.append(Action(
+                id: .linkMarkdown,
                 text: "Link (markdown)",
                 subText: "Copy [title](url) of the tab",
                 run: { BrowserCapture.captureLink(entry) }))
             acts.append(Action(
+                id: .fullHTML,
                 text: "Full HTML",
                 subText: "Complete HTML of the tab",
                 run: { BrowserCapture.capturePage(entry, wantHTML: true) }))
@@ -74,6 +119,7 @@ enum PickerFlow {
         if let doc {
             let short = doc.replacingOccurrences(of: NSHomeDirectory(), with: "~")
             acts.append(Action(
+                id: .filePath,
                 text: "File path — \(short)",
                 subText: "Copy the document's path",
                 run: {
@@ -82,6 +128,7 @@ enum PickerFlow {
                     Delivery.maybeAutoPaste()
                 }))
             acts.append(Action(
+                id: .atReference,
                 text: "@-reference (Claude Code)",
                 subText: "Copy '@\(short)'",
                 run: {
@@ -90,6 +137,7 @@ enum PickerFlow {
                     Delivery.maybeAutoPaste()
                 }))
             acts.append(Action(
+                id: .fileContents,
                 text: "File contents",
                 subText: "Copy the document text itself (text formats only)",
                 run: {
@@ -106,22 +154,26 @@ enum PickerFlow {
         }
 
         acts.append(Action(
+            id: .screenshotClipboard,
             text: "Screenshot → clipboard",
             subText: "Window snapshot as image + saved PNG (needs Screen Recording)",
             run: { ScreenshotCapture.capture(entry, pathOnly: false) }))
         acts.append(Action(
+            id: .screenshotPath,
             text: "Screenshot → file path",
             subText: "Snapshot saved as PNG, its path copied (for Claude Code)",
             run: { ScreenshotCapture.capture(entry, pathOnly: true) }))
 
         if !isBrowser {
             acts.append(Action(
+                id: .windowText,
                 text: "Window text (best effort)",
                 subText: "Extract visible text via Accessibility",
                 run: { AXTextCapture.captureWindowText(entry) }))
         }
 
         acts.append(Action(
+            id: .titleLine,
             text: "Title line",
             subText: "Copy 'App — window title' as plain text",
             run: {

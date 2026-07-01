@@ -38,13 +38,45 @@ menu to turn that off).
 | Auto-paste | `hs.eventtap.keyStroke` | `CGEvent` Cmd+V posted to the HID tap — `Delivery.swift` |
 | Onboarding | README walkthrough | SwiftUI setup window with live permission status — `Onboarding.swift`, `Permissions.swift` |
 
+## Learned action ranking
+
+The action chooser reorders itself around your habits: the model predicts
+which capture action you'll pick given where you are pasting *to* (frontmost
+app at hotkey time), which app the source window belongs to, its entry kind,
+and the source window's title tokens — so two projects in the same editor can
+learn different defaults (e.g. one Zed project → `@-reference`, another →
+screenshot). The top row is the Enter-Enter default; when the learned order
+deviates from the canonical one with enough evidence, the top row is marked
+`· learned`.
+
+Model: a single-layer softmax network (online multinomial logistic
+regression, `ActionRanker.swift`) over hashed sparse features, one SGD step
+per pick, softmax masked to the actions actually presented. The
+global → per-app → per-project hierarchy is encoded in the features (bias,
+app IDs, target×source crosses, source×title-token crosses), so unseen
+contexts back off smoothly to app-level and global trends.
+
+Every pick is appended to
+`~/Library/Application Support/ContextStack/action-events.jsonl`; the weights
+are rebuilt from that log at each launch (the log is the source of truth, the
+model just a cache). Nothing leaves the machine. Delete the file to reset
+learning; toggle *Smart action ranking* in the menu to disable reordering
+(picks are still logged).
+
+Verify the learner without granting any permissions:
+
+```sh
+.build/debug/ContextStack --ranker-selftest
+```
+
 ## Config
 
 Same knobs as the spoon, via `defaults` (domain `cloud.alexrank.ContextStack`):
 
 ```sh
 defaults write cloud.alexrank.ContextStack maxEntries -int 10
-defaults write cloud.alexrank.ContextStack autoPaste -bool false   # default: true
+defaults write cloud.alexrank.ContextStack autoPaste -bool false     # default: true
+defaults write cloud.alexrank.ContextStack smartRanking -bool false  # default: true
 defaults write cloud.alexrank.ContextStack notifyOnCopy -bool false
 defaults write cloud.alexrank.ContextStack captureDir -string "$HOME/SomewhereElse"
 defaults write cloud.alexrank.ContextStack maxFileBytes -int 524288

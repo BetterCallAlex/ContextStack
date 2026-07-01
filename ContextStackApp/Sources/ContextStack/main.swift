@@ -1,5 +1,9 @@
 import AppKit
 
+if CommandLine.arguments.contains("--ranker-selftest") {
+    RankerSelfTest.run()
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

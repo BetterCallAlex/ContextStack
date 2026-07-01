@@ -48,6 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         paste.target = self
         menu.addItem(paste)
 
+        let ranking = NSMenuItem(title: "Smart action ranking (learned)",
+                                 action: #selector(toggleSmartRanking), keyEquivalent: "")
+        ranking.state = Config.smartRanking ? .on : .off
+        ranking.target = self
+        menu.addItem(ranking)
+
         let folder = NSMenuItem(title: "Open Capture Folder",
                                 action: #selector(openCaptureFolder), keyEquivalent: "")
         folder.target = self
@@ -79,6 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleAutoPaste() {
         Config.autoPaste.toggle()
+    }
+
+    @objc private func toggleSmartRanking() {
+        Config.smartRanking.toggle()
     }
 
     @objc private func openCaptureFolder() {
