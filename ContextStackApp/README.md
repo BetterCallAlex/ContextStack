@@ -32,7 +32,7 @@ menu to turn that off).
 | Hotkey | `hs.hotkey` | Carbon `RegisterEventHotKey` (⌃⌥Space) — `HotkeyManager.swift` |
 | Picker UI | `hs.chooser` | Borderless **non-activating** `NSPanel` (search field + table). Non-activating is what keeps the target window focused so auto-paste lands right — `ChooserPanel.swift` |
 | Browser capture | AppleScript via `hs.osascript` | Same AppleScript via `NSAppleScript`; HTTP fallback via `URLSession` + `textutil` — `BrowserCapture.swift` |
-| Document path | `hs.axuielement` `AXDocument` | Raw AX C API — `DocumentCapture.swift`, `AX.swift` |
+| Document path | `hs.axuielement` `AXDocument` | Layered resolver — `DocumentCapture.swift`: AXDocument on the window, AXDocument on the focused element's ancestors, absolute-path token in the title, then filename-in-title → Spotlight (`mdfind`) ranked by the remaining title tokens. The Spotlight layer is what makes file actions work for editors without AX document support (Zed); "File contents" falls back to AX window text when nothing resolves (terminals) |
 | Window text | AX tree walk | Same walk (depth ≤ 12, ≤ 3000 nodes) — `AXTextCapture.swift` |
 | Screenshot | `hs.window:snapshot()` | **ScreenCaptureKit** `SCScreenshotManager`; SCWindow matched to the AX window by pid + title, falling back to pid + frame — `ScreenshotCapture.swift` |
 | Auto-paste | `hs.eventtap.keyStroke` | `CGEvent` Cmd+V posted to the HID tap — `Delivery.swift` |

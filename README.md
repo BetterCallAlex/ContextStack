@@ -133,6 +133,11 @@ Config knobs (in `~/.hammerspoon/init.lua`): `maxEntries`, `captureDir`,
   (roadmap).
 - **Electron apps** (Slack, Discord, …) expose patchy Accessibility trees →
   "window text" may come back thin; use the screenshot action.
+- **Editors without `AXDocument`** (e.g. Zed) and **terminals**: the spoon's
+  file actions don't appear for them. The Swift app resolves these with a
+  layered fallback (title path token → Spotlight lookup by the filename in
+  the title, ranked by project tokens; window text as the last resort) — see
+  [ContextStackApp/README.md](ContextStackApp/README.md).
 - Window snapshots of minimized/other-Space windows can fail; the picker's
   history keeps windows for a while after you leave them, but a closed window
   can only be captured via its URL (browsers) or document path.

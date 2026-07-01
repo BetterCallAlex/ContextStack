@@ -38,7 +38,8 @@ enum PickerFlow {
 
     private static func kindLabel(_ entry: HistoryEntry) -> String {
         if BrowserCapture.family(of: entry) != nil { return "browser tab" }
-        if DocumentCapture.documentPath(entry) != nil { return "document" }
+        if DocumentCapture.cheapDocumentPath(entry) != nil { return "document" }
+        if DocumentCapture.titleCandidate(entry.title) != nil { return "document" }
         return "window"
     }
 
@@ -96,7 +97,9 @@ enum PickerFlow {
     private static func actionsFor(_ entry: HistoryEntry) -> [Action] {
         var acts: [Action] = []
         let isBrowser = BrowserCapture.family(of: entry) != nil
-        let doc = DocumentCapture.documentPath(entry)
+        let doc = DocumentCapture.cheapDocumentPath(entry)
+        let candidate = (isBrowser || doc != nil)
+            ? nil : DocumentCapture.titleCandidate(entry.title)
 
         if isBrowser {
             acts.append(Action(
@@ -122,33 +125,55 @@ enum PickerFlow {
                 id: .filePath,
                 text: "File path — \(short)",
                 subText: "Copy the document's path",
-                run: {
-                    Delivery.setClipboard(doc)
-                    Delivery.notify("ContextStack: path copied", doc)
-                    Delivery.maybeAutoPaste()
-                }))
+                run: { deliverPath(doc) }))
             acts.append(Action(
                 id: .atReference,
                 text: "@-reference (Claude Code)",
                 subText: "Copy '@\(short)'",
-                run: {
-                    Delivery.setClipboard("@" + doc)
-                    Delivery.notify("ContextStack: @-reference copied", "@" + doc)
-                    Delivery.maybeAutoPaste()
-                }))
+                run: { deliverAtReference(doc) }))
+            if !DocumentCapture.isDirectory(doc) {
+                acts.append(Action(
+                    id: .fileContents,
+                    text: "File contents",
+                    subText: "Copy the document text itself (text formats only)",
+                    run: { deliverContents(of: doc, entry: entry) }))
+            }
+        } else if let candidate {
+            // No AX document — locate the file named in the window title
+            // (Zed and friends). Spotlight runs when the action is picked.
             acts.append(Action(
                 id: .fileContents,
-                text: "File contents",
-                subText: "Copy the document text itself (text formats only)",
+                text: "File contents — '\(candidate.filename)'",
+                subText: "Locate by window title (Spotlight) and copy the file text; "
+                    + "falls back to window text",
                 run: {
-                    let (data, err) = DocumentCapture.readTextFile(doc)
-                    if let data {
-                        Delivery.text(entry: entry, kind: "file contents",
-                                      source: doc, content: data)
-                    } else {
-                        Delivery.notify("ContextStack",
-                                        "Cannot copy contents: \(err ?? "?") — copied the path instead")
-                        Delivery.setClipboard(doc)
+                    DocumentCapture.resolveViaSpotlight(candidate) { path in
+                        if let path {
+                            deliverContents(of: path, entry: entry)
+                        } else {
+                            Delivery.notify("ContextStack",
+                                            "'\(candidate.filename)' not found via Spotlight — "
+                                            + "capturing window text instead")
+                            AXTextCapture.captureWindowText(entry)
+                        }
+                    }
+                }))
+            acts.append(Action(
+                id: .filePath,
+                text: "File path — locate '\(candidate.filename)'",
+                subText: "Locate by window title (Spotlight), copy the path",
+                run: {
+                    DocumentCapture.resolveViaSpotlight(candidate) { path in
+                        if let path { deliverPath(path) } else { notifyNotFound(candidate) }
+                    }
+                }))
+            acts.append(Action(
+                id: .atReference,
+                text: "@-reference (Claude Code)",
+                subText: "Locate by window title (Spotlight), copy '@path'",
+                run: {
+                    DocumentCapture.resolveViaSpotlight(candidate) { path in
+                        if let path { deliverAtReference(path) } else { notifyNotFound(candidate) }
                     }
                 }))
         }
@@ -183,5 +208,37 @@ enum PickerFlow {
             }))
 
         return acts
+    }
+
+    // ------------------------------------------------- document delivery
+
+    private static func deliverPath(_ path: String) {
+        Delivery.setClipboard(path)
+        Delivery.notify("ContextStack: path copied", path)
+        Delivery.maybeAutoPaste()
+    }
+
+    private static func deliverAtReference(_ path: String) {
+        Delivery.setClipboard("@" + path)
+        Delivery.notify("ContextStack: @-reference copied", "@" + path)
+        Delivery.maybeAutoPaste()
+    }
+
+    private static func deliverContents(of path: String, entry: HistoryEntry) {
+        let (data, err) = DocumentCapture.readTextFile(path)
+        if let data {
+            Delivery.text(entry: entry, kind: "file contents",
+                          source: path, content: data)
+        } else {
+            Delivery.notify("ContextStack",
+                            "Cannot copy contents: \(err ?? "?") — copied the path instead")
+            Delivery.setClipboard(path)
+        }
+    }
+
+    private static func notifyNotFound(_ candidate: DocumentCapture.TitleCandidate) {
+        Delivery.notify("ContextStack",
+                        "'\(candidate.filename)' not found via Spotlight — "
+                        + "try Window text or Screenshot")
     }
 }
