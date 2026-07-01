@@ -95,11 +95,26 @@ Notes:
   - If you skip this, ContextStack silently falls back to fetching the URL
     over HTTP (fine for public pages, no session/login).
 
-## Install (on the Mac)
+## Install
+
+**Standalone app** (recommended — no dependencies beyond Xcode command-line
+tools, macOS 14+):
+
+```sh
+git clone <this repo> && cd contextstack/ContextStackApp
+./make-signing-cert.sh     # one-time, keeps permission grants across rebuilds
+./build-app.sh install
+open /Applications/ContextStack.app
+```
+
+The setup window walks through every permission. Details, config and
+troubleshooting: [ContextStackApp/README.md](ContextStackApp/README.md).
+
+**Hammerspoon spoon** (alternative):
 
 ```sh
 brew install --cask hammerspoon
-git clone <this repo> && cd context-stack
+git clone <this repo> && cd contextstack
 ./install.sh
 ```
 
