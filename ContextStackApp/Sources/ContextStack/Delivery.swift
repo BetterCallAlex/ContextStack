@@ -82,8 +82,12 @@ enum Delivery {
     /// Press Cmd+V into the frontmost app. The chooser panel never activates
     /// this app, so the original window is still focused — the paste lands
     /// where the hotkey was pressed.
+    /// Set by CLI test modes so a test capture never pastes into whatever
+    /// window happens to be focused.
+    static var suppressAutoPaste = false
+
     static func maybeAutoPaste() {
-        guard Config.autoPaste else { return }
+        guard Config.autoPaste, !suppressAutoPaste else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             let src = CGEventSource(stateID: .combinedSessionState)
             let vKey: CGKeyCode = 9

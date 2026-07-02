@@ -40,9 +40,26 @@ menu to turn that off).
 | Browser capture | AppleScript via `hs.osascript` | Same AppleScript via `NSAppleScript`; HTTP fallback via `URLSession` + `textutil` — `BrowserCapture.swift` |
 | Document path | `hs.axuielement` `AXDocument` | Layered resolver — `DocumentCapture.swift`: AXDocument on the window, AXDocument on the focused element's ancestors, absolute-path token in the title, then filename-in-title → Spotlight (`mdfind`) ranked by the remaining title tokens. The Spotlight layer is what makes file actions work for editors without AX document support (Zed); "File contents" falls back to AX window text when nothing resolves (terminals) |
 | Window text | AX tree walk | Same walk (depth ≤ 12, ≤ 3000 nodes) — `AXTextCapture.swift` |
-| Screenshot | `hs.window:snapshot()` | **ScreenCaptureKit** `SCScreenshotManager`; SCWindow matched to the AX window by pid + title, falling back to pid + frame — `ScreenshotCapture.swift` |
+| Screenshot | `hs.window:snapshot()` | **ScreenCaptureKit** `SCScreenshotManager` for on-screen windows; SCWindow matched to the AX window by pid + title, falling back to pid + frame. Windows on another Space or minimized use the legacy `CGWindowListCreateImage` path — SCK's window filter hard-aborts (SkyLight assert) on off-screen windows — `ScreenshotCapture.swift` |
 | Auto-paste | `hs.eventtap.keyStroke` | `CGEvent` Cmd+V posted to the HID tap — `Delivery.swift` |
 | Onboarding | README walkthrough | SwiftUI setup window with live permission status — `Onboarding.swift`, `Permissions.swift` |
+
+## Remote files (Zed over SSH)
+
+Zed publishes the *remote* path in AXDocument for SSH projects
+(`/home/user/project/file.py`), so a local read can't work. ContextStack
+matches that path against the SSH workspaces recorded in Zed's session
+database (`~/Library/Application Support/Zed/db/*-stable/db.sqlite`, read
+immutable/read-only), picks the connection whose worktree root is the longest
+prefix, and runs `ssh <host> cat -- <path>` (BatchMode, 6 s connect / 15 s
+total timeout, size cap, binary sniff) — `RemoteFileCapture.swift`. Works
+with hosts from your `~/.ssh/config`; key-based auth required (BatchMode
+never prompts). The action shows as "File contents (over SSH)".
+
+Debug helpers (no GUI): `--remote-test <remote-path>` resolves and fetches;
+`--diag <app> <outfile>` dumps AX + ScreenCaptureKit state for an app (run
+via `open -n -W ... --args` so TCC grants apply); `--shot-test <app>`
+exercises the production screenshot path.
 
 ## Learned action ranking
 

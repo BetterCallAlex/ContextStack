@@ -12,20 +12,41 @@ enum ScreenshotCapture {
             do {
                 let content = try await SCShareableContent
                     .excludingDesktopWindows(false, onScreenWindowsOnly: false)
-                guard let scWindow = match(entry, in: content.windows) else {
+                let appWindows = content.windows.filter {
+                    $0.owningApplication?.processID == entry.pid
+                }
+                guard let scWindow = match(entry, in: appWindows) else {
                     Delivery.notify("ContextStack",
-                                    "Snapshot failed — window gone, or it's on another Space")
+                                    "Snapshot failed — window not found (closed?)")
                     return
                 }
-                let filter = SCContentFilter(desktopIndependentWindow: scWindow)
-                let cfg = SCStreamConfiguration()
-                let scale = CGFloat(filter.pointPixelScale)
-                cfg.width = max(1, Int(filter.contentRect.width * scale))
-                cfg.height = max(1, Int(filter.contentRect.height * scale))
-                cfg.showsCursor = false
-                let image = try await SCScreenshotManager.captureImage(
-                    contentFilter: filter, configuration: cfg)
-                deliver(image, entry: entry, pathOnly: pathOnly)
+                // SCContentFilter(desktopIndependentWindow:) hard-aborts the
+                // whole process (SkyLight assert) for windows that aren't on
+                // the active Space — only use ScreenCaptureKit for on-screen
+                // windows, and the legacy CGWindowList path for the rest.
+                if scWindow.isOnScreen {
+                    do {
+                        let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+                        let cfg = SCStreamConfiguration()
+                        let scale = CGFloat(filter.pointPixelScale)
+                        cfg.width = max(1, Int(filter.contentRect.width * scale))
+                        cfg.height = max(1, Int(filter.contentRect.height * scale))
+                        cfg.showsCursor = false
+                        let image = try await SCScreenshotManager.captureImage(
+                            contentFilter: filter, configuration: cfg)
+                        deliver(image, entry: entry, pathOnly: pathOnly)
+                        return
+                    } catch {
+                        csLog("SCK capture failed, trying legacy:", error.localizedDescription)
+                    }
+                }
+                if let image = legacyCapture(windowID: scWindow.windowID) {
+                    deliver(image, entry: entry, pathOnly: pathOnly)
+                } else {
+                    Delivery.notify("ContextStack",
+                                    "Snapshot failed — window may be minimized; "
+                                    + "bring it on screen and try again")
+                }
             } catch {
                 Delivery.notify("ContextStack",
                                 "Snapshot failed — check the Screen Recording permission "
@@ -34,11 +55,11 @@ enum ScreenshotCapture {
         }
     }
 
-    private static func match(_ entry: HistoryEntry, in windows: [SCWindow]) -> SCWindow? {
-        let candidates = windows.filter {
-            $0.owningApplication?.processID == entry.pid
-        }
+    private static func match(_ entry: HistoryEntry, in candidates: [SCWindow]) -> SCWindow? {
         if candidates.isEmpty { return nil }
+        // Prefer on-screen candidates — only they can be captured.
+        let candidates = candidates.filter(\.isOnScreen).isEmpty
+            ? candidates : candidates.filter(\.isOnScreen)
         // Current AX title first (tab switches rename browser windows),
         // then the remembered one.
         let currentTitle = AX.string(entry.axWindow, kAXTitleAttribute as String)
@@ -58,6 +79,13 @@ enum ScreenshotCapture {
             return hit
         }
         return candidates.count == 1 ? candidates[0] : nil
+    }
+
+    /// Legacy CGWindowList capture — deprecated, but the only way to shoot a
+    /// window that lives on another Space (ScreenCaptureKit aborts on those).
+    static func legacyCapture(windowID: CGWindowID) -> CGImage? {
+        CGWindowListCreateImage(.null, .optionIncludingWindow, windowID,
+                                [.boundsIgnoreFraming, .bestResolution])
     }
 
     private static func deliver(_ image: CGImage, entry: HistoryEntry, pathOnly: Bool) {

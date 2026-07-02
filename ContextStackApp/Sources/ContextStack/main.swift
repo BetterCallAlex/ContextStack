@@ -1,5 +1,8 @@
 import AppKit
 
+// Before anything else — the CLI modes below read Config too.
+Config.registerDefaults()
+
 if CommandLine.arguments.contains("--ranker-selftest") {
     RankerSelfTest.run()
 }
@@ -9,6 +12,63 @@ if CommandLine.arguments.contains("--doc-selftest") {
 if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
    CommandLine.arguments.count > i + 1 {
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+    exit(0)
+}
+if let i = CommandLine.arguments.firstIndex(of: "--diag"),
+   CommandLine.arguments.count > i + 2 {
+    Diagnostics.run(appQuery: CommandLine.arguments[i + 1],
+                    outPath: CommandLine.arguments[i + 2])
+}
+if let i = CommandLine.arguments.firstIndex(of: "--remote-test"),
+   CommandLine.arguments.count > i + 1 {
+    let path = CommandLine.arguments[i + 1]
+    guard let conn = RemoteFileCapture.zedConnection(forRemotePath: path) else {
+        print("no Zed SSH workspace matches \(path)")
+        exit(1)
+    }
+    print("connection: host=\(conn.host) port=\(conn.port.map(String.init) ?? "default") "
+          + "user=\(conn.user ?? "from ssh config") root=\(conn.rootPath)")
+    var done = false
+    RemoteFileCapture.fetch(path: path, via: conn) { text, err in
+        if let text {
+            print("fetched \(text.count) chars; first lines:")
+            print(text.split(separator: "\n").prefix(5).joined(separator: "\n"))
+        } else {
+            print("fetch error: \(err ?? "?")")
+        }
+        done = true
+    }
+    while !done { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1)) }
+    exit(0)
+}
+
+// End-to-end test of the production screenshot path against a running app's
+// focused window; run via `open -n -W ... --args --shot-test <app>` so TCC
+// grants apply. Writes the PNG to the capture dir like the real action.
+if let i = CommandLine.arguments.firstIndex(of: "--shot-test"),
+   CommandLine.arguments.count > i + 1 {
+    Delivery.suppressAutoPaste = true
+    let q = CommandLine.arguments[i + 1].lowercased()
+    guard let target = NSWorkspace.shared.runningApplications.first(where: {
+        ($0.localizedName ?? "").lowercased().contains(q)
+    }) else {
+        print("no running app matching \(q)")
+        exit(1)
+    }
+    let appEl = AXUIElementCreateApplication(target.processIdentifier)
+    guard let win = AX.element(appEl, kAXFocusedWindowAttribute as String) else {
+        print("no focused window for \(target.localizedName ?? q) (AX trust?)")
+        exit(1)
+    }
+    let entry = HistoryEntry(axWindow: win, pid: target.processIdentifier,
+                             appName: target.localizedName ?? "?",
+                             bundleID: target.bundleIdentifier ?? "",
+                             title: AX.string(win, kAXTitleAttribute as String) ?? "")
+    ScreenshotCapture.capture(entry, pathOnly: true)
+    let deadline = Date().addingTimeInterval(12)
+    while Date() < deadline {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1))
+    }
     exit(0)
 }
 

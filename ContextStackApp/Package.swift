@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ContextStack",
-            path: "Sources/ContextStack"
+            path: "Sources/ContextStack",
+            linkerSettings: [.linkedLibrary("sqlite3")]
         )
     ]
 )

@@ -131,7 +131,13 @@ enum PickerFlow {
                 text: "@-reference (Claude Code)",
                 subText: "Copy '@\(short)'",
                 run: { deliverAtReference(doc) }))
-            if !DocumentCapture.isDirectory(doc) {
+            if RemoteFileCapture.isLikelyRemote(path: doc, entry: entry) {
+                acts.append(Action(
+                    id: .fileContents,
+                    text: "File contents (over SSH)",
+                    subText: "Remote file — fetch via the Zed SSH connection that owns it",
+                    run: { deliverContents(of: doc, entry: entry) }))
+            } else if !DocumentCapture.isDirectory(doc) {
                 acts.append(Action(
                     id: .fileContents,
                     text: "File contents",
@@ -229,11 +235,32 @@ enum PickerFlow {
         if let data {
             Delivery.text(entry: entry, kind: "file contents",
                           source: path, content: data)
-        } else {
-            Delivery.notify("ContextStack",
-                            "Cannot copy contents: \(err ?? "?") — copied the path instead")
-            Delivery.setClipboard(path)
+            return
         }
+        if err == "cannot open file",
+           RemoteFileCapture.isLikelyRemote(path: path, entry: entry) {
+            guard let conn = RemoteFileCapture.zedConnection(forRemotePath: path) else {
+                Delivery.notify("ContextStack",
+                                "Remote file, but no matching Zed SSH workspace found — "
+                                + "copied the path instead")
+                Delivery.setClipboard(path)
+                return
+            }
+            RemoteFileCapture.fetch(path: path, via: conn) { text, fetchErr in
+                if let text {
+                    Delivery.text(entry: entry, kind: "file contents (ssh \(conn.host))",
+                                  source: "\(conn.host):\(path)", content: text)
+                } else {
+                    Delivery.notify("ContextStack",
+                                    "SSH fetch failed: \(fetchErr ?? "?") — copied the path instead")
+                    Delivery.setClipboard(path)
+                }
+            }
+            return
+        }
+        Delivery.notify("ContextStack",
+                        "Cannot copy contents: \(err ?? "?") — copied the path instead")
+        Delivery.setClipboard(path)
     }
 
     private static func notifyNotFound(_ candidate: DocumentCapture.TitleCandidate) {
