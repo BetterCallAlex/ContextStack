@@ -6,7 +6,8 @@ import AppKit
 /// panels appear on screen for a few seconds.
 @MainActor
 enum UIShots {
-    static var requestedDir: String?
+    // Written once from top-level startup code before the run loop exists.
+    nonisolated(unsafe) static var requestedDir: String?
 
     static func run(dir: String) {
         try? FileManager.default.createDirectory(
