@@ -1,0 +1,34 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build .dmg
+        run: |
+          chmod +x ContextStackApp/build-app.sh ContextStackApp/make-dmg.sh
+          ContextStackApp/make-dmg.sh
+
+      - name: Run selftests
+        run: |
+          ContextStackApp/.build/release/ContextStack --ranker-selftest
+          ContextStackApp/.build/release/ContextStack --doc-selftest
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            ContextStackApp/build/ContextStack-*.dmg \
+            --title "ContextStack $GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes "**First launch:** macOS blocks apps from unidentified developers — approve once via System Settings → Privacy & Security → *Open Anyway*. Then grant permissions in the setup window. Building from source instead gives you a locally-signed copy without the Gatekeeper step."

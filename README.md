@@ -52,7 +52,14 @@ never in the background, no database of your screen.
 
 ## Install
 
-Needs macOS 14+ and the Xcode command-line tools (`xcode-select --install`).
+**Download:** grab the `.dmg` from
+[Releases](https://github.com/BetterCallAlex/ContextStack/releases) and drag
+ContextStack to Applications. On first launch macOS blocks apps from
+unidentified developers (the build isn't notarized) — approve once under
+System Settings → Privacy & Security → *Open Anyway*.
+
+**Or build from source** — locally signed, no Gatekeeper step. Needs
+macOS 14+ and the Xcode command-line tools (`xcode-select --install`).
 
 ```sh
 git clone https://github.com/BetterCallAlex/ContextStack.git
