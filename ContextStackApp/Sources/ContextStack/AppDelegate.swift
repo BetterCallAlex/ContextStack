@@ -7,6 +7,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Config.registerDefaults()
+        if let dir = UIShots.requestedDir {
+            UIShots.run(dir: dir)
+            return
+        }
         Delivery.ensureDir()
         setupStatusItem()
 

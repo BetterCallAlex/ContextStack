@@ -72,6 +72,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--shot-test"),
     exit(0)
 }
 
+if let i = CommandLine.arguments.firstIndex(of: "--ui-shots"),
+   CommandLine.arguments.count > i + 1 {
+    UIShots.requestedDir = CommandLine.arguments[i + 1]
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

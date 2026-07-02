@@ -152,7 +152,7 @@ enum IconKit {
         return ctx.makeImage()
     }
 
-    private static func writePNG(_ image: CGImage?, to url: URL) {
+    static func writePNG(_ image: CGImage?, to url: URL) {
         guard let image,
               let dest = CGImageDestinationCreateWithURL(
                 url as CFURL, UTType.png.identifier as CFString, 1, nil)
