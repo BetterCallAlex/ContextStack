@@ -1,8 +1,8 @@
 import AppKit
 
-/// Browser tab capture via Apple Events, mirroring the Hammerspoon spoon:
-/// find the tab by remembered title (fallback: active tab), run JS in it,
-/// fall back to a plain HTTP fetch of the URL.
+/// Browser tab capture via Apple Events: find the tab by remembered title
+/// (fallback: active tab), run JS in it, fall back to a plain HTTP fetch of
+/// the URL.
 enum BrowserCapture {
     enum Family { case chromium, safari }
 

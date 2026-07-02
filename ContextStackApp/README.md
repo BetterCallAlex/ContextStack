@@ -1,7 +1,7 @@
-# ContextStack.app — standalone Swift menu-bar app
+# ContextStack.app
 
-Same product as the Hammerspoon spoon, no Hammerspoon dependency. One SwiftPM
-package, AppKit + SwiftUI, macOS 14+.
+Standalone Swift menu-bar app. One SwiftPM package, AppKit + SwiftUI,
+macOS 14+, no dependencies.
 
 ## Build & install
 
@@ -25,24 +25,25 @@ captures; the prompt only fires while that browser is running) and
 Notifications. Reopen the window anytime from the menu-bar icon →
 *Permissions & Setup…*.
 
-Press **⌃⌥Space** — same flow as the spoon: recent-windows picker → capture
-actions → clipboard + `~/ContextStack/` archive → **auto-pasted** into the
-window you started from (toggle *Auto-paste after capture* in the menu-bar
-menu to turn that off).
+Press **⌃⌥Space**: recent-windows picker → capture actions → clipboard +
+`~/ContextStack/` archive → **auto-pasted** into the window you started from
+(toggle *Auto-paste after capture* in the menu-bar menu to turn that off).
 
-## Architecture (maps 1:1 to the spoon)
+## Architecture
 
-| Concern | Spoon (Hammerspoon) | This app |
-|---|---|---|
-| Focus history | `hs.window.filter` windowFocused | `NSWorkspace.didActivateApplicationNotification` + one `AXObserver` per app (`kAXFocusedWindowChangedNotification`) — `FocusTracker.swift` |
-| Hotkey | `hs.hotkey` | Carbon `RegisterEventHotKey` (⌃⌥Space) — `HotkeyManager.swift` |
-| Picker UI | `hs.chooser` | Borderless **non-activating** `NSPanel` (search field + table). Non-activating is what keeps the target window focused so auto-paste lands right — `ChooserPanel.swift` |
-| Browser capture | AppleScript via `hs.osascript` | Same AppleScript via `NSAppleScript`; HTTP fallback via `URLSession` + `textutil` — `BrowserCapture.swift` |
-| Document path | `hs.axuielement` `AXDocument` | Layered resolver — `DocumentCapture.swift`: AXDocument on the window, AXDocument on the focused element's ancestors, absolute-path token in the title, then filename-in-title → Spotlight (`mdfind`) ranked by the remaining title tokens. The Spotlight layer is what makes file actions work for editors without AX document support (Zed); "File contents" falls back to AX window text when nothing resolves (terminals) |
-| Window text | AX tree walk | Same walk (depth ≤ 12, ≤ 3000 nodes) — `AXTextCapture.swift` |
-| Screenshot | `hs.window:snapshot()` | **ScreenCaptureKit** `SCScreenshotManager` for on-screen windows; SCWindow matched to the AX window by pid + title, falling back to pid + frame. Windows on another Space or minimized use the legacy `CGWindowListCreateImage` path — SCK's window filter hard-aborts (SkyLight assert) on off-screen windows — `ScreenshotCapture.swift` |
-| Auto-paste | `hs.eventtap.keyStroke` | `CGEvent` Cmd+V posted to the HID tap — `Delivery.swift` |
-| Onboarding | README walkthrough | SwiftUI setup window with live permission status — `Onboarding.swift`, `Permissions.swift` |
+| Concern | Implementation |
+|---|---|
+| Focus history | `NSWorkspace.didActivateApplicationNotification` + one `AXObserver` per app (`kAXFocusedWindowChangedNotification`) — `FocusTracker.swift` |
+| Hotkey | Carbon `RegisterEventHotKey` (⌃⌥Space) — `HotkeyManager.swift` |
+| Picker UI | Borderless **non-activating** `NSPanel` (search field + table). Non-activating is what keeps the target window focused so auto-paste lands right — `ChooserPanel.swift` |
+| Browser capture | AppleScript via `NSAppleScript` (tab lookup by remembered title, JS execution in the tab); HTTP fallback via `URLSession` + `textutil` — `BrowserCapture.swift` |
+| Document path | Layered resolver — `DocumentCapture.swift`: AXDocument on the window, AXDocument on the focused element's ancestors, absolute-path token in the title, then filename-in-title → Spotlight (`mdfind`) ranked by the remaining title tokens. "File contents" falls back to AX window text when nothing resolves (terminals) |
+| Remote files | Zed SSH workspaces from Zed's session db + `ssh host cat` — `RemoteFileCapture.swift` |
+| Window text | AX tree walk (depth ≤ 12, ≤ 3000 nodes) — `AXTextCapture.swift` |
+| Screenshot | **ScreenCaptureKit** `SCScreenshotManager` for on-screen windows; SCWindow matched to the AX window by pid + title, falling back to pid + frame. Windows on another Space or minimized use the legacy `CGWindowListCreateImage` path — SCK's window filter hard-aborts (SkyLight assert) on off-screen windows — `ScreenshotCapture.swift` |
+| Auto-paste | `CGEvent` Cmd+V posted to the HID tap — `Delivery.swift` |
+| Onboarding | SwiftUI setup window with live permission status, signature diagnostics and stale-grant reset — `Onboarding.swift`, `Permissions.swift` |
+| Action ranking | Online softmax model over hashed context features — `ActionRanker.swift` |
 
 ## Remote files (Zed over SSH)
 
@@ -105,7 +106,7 @@ design, edit `IconKit.swift` and rebuild; `--render-icon` also writes
 
 ## Config
 
-Same knobs as the spoon, via `defaults` (domain `cloud.alexrank.ContextStack`):
+Via `defaults` (domain `cloud.alexrank.ContextStack`):
 
 ```sh
 defaults write cloud.alexrank.ContextStack maxEntries -int 10

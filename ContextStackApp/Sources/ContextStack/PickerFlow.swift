@@ -92,8 +92,8 @@ enum PickerFlow {
         return marked
     }
 
-    /// Action list per entry type — same set and order as the Hammerspoon
-    /// spoon; this canonical order is the cold-start ranking.
+    /// Action list per entry type; this canonical order is the cold-start
+    /// ranking before the learned model has data.
     private static func actionsFor(_ entry: HistoryEntry) -> [Action] {
         var acts: [Action] = []
         let isBrowser = BrowserCapture.family(of: entry) != nil

@@ -1,8 +1,8 @@
 import Foundation
 
-/// User-tweakable settings, persisted in UserDefaults (defaults mirror the
-/// Hammerspoon spoon). `defaults write cloud.alexrank.ContextStack <key> ...`
-/// to change from the command line.
+/// User-tweakable settings, persisted in UserDefaults.
+/// `defaults write cloud.alexrank.ContextStack <key> ...` to change from
+/// the command line.
 enum Config {
     private static let d = UserDefaults.standard
 

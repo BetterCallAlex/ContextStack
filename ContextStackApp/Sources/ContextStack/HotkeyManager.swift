@@ -7,7 +7,7 @@ final class HotkeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
 
-    /// Default: ⌃⌥Space, same as the Hammerspoon spoon.
+    /// Default: ⌃⌥Space.
     func register(keyCode: UInt32 = UInt32(kVK_Space),
                   modifiers: UInt32 = UInt32(controlKey | optionKey)) {
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
