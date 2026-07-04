@@ -29,7 +29,7 @@ with the most likely one already on top, so **Enter-Enter** usually does it:
 |---|---|
 | **Browser tab** (Safari, Chrome, Arc, Brave, Edge, Vivaldi) | Rendered page text or full HTML — including logged-in pages and SPAs — via JavaScript in the tab; URL as a markdown link. Falls back to fetching the URL. |
 | **Document window** (Preview, TextEdit, Xcode, Zed, …) | The file itself: contents, path, or `@path` for Claude Code. Resolved via Accessibility, window title, or Spotlight. |
-| **Zed over SSH** | Remote file contents — ContextStack finds the SSH host in Zed's session data and fetches the file with `ssh cat`. |
+| **Remote files over SSH** (Zed, VS Code, Cursor, JetBrains) | Remote file contents — ContextStack works out host and path from the editor's own session data or window title and fetches with `ssh`. |
 | **Any window** | Screenshot (pasteable image + saved PNG) — works even for windows on other Spaces — or visible text via Accessibility. |
 
 Every capture also lands in `~/ContextStack/` as a timestamped `.md`/`.png`

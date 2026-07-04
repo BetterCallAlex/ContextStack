@@ -22,6 +22,7 @@ jobs:
         run: |
           ContextStackApp/.build/release/ContextStack --ranker-selftest
           ContextStackApp/.build/release/ContextStack --doc-selftest
+          ContextStackApp/.build/release/ContextStack --remote-selftest
 
       - name: Create release
         env:

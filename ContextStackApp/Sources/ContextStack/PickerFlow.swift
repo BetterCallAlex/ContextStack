@@ -98,7 +98,9 @@ enum PickerFlow {
         var acts: [Action] = []
         let isBrowser = BrowserCapture.family(of: entry) != nil
         let doc = DocumentCapture.cheapDocumentPath(entry)
-        let candidate = (isBrowser || doc != nil)
+        let remote = isBrowser ? nil
+            : RemoteFileCapture.candidate(for: entry, docPath: doc)
+        let candidate = (isBrowser || doc != nil || remote != nil)
             ? nil : DocumentCapture.titleCandidate(entry.title)
 
         if isBrowser {
@@ -119,7 +121,42 @@ enum PickerFlow {
                 run: { BrowserCapture.capturePage(entry, wantHTML: true) }))
         }
 
-        if let doc {
+        if let remote {
+            acts.append(Action(
+                id: .fileContents,
+                text: "File contents (over SSH)",
+                subText: "Remote file — fetched from \(remote.displayHost) via your SSH connection",
+                run: { deliverRemoteContents(remote, entry: entry) }))
+            if let exact = remote.exactPath {
+                let short = exact
+                acts.append(Action(
+                    id: .filePath,
+                    text: "File path — \(short)",
+                    subText: "Copy the remote document's path",
+                    run: { deliverPath(exact) }))
+                acts.append(Action(
+                    id: .atReference,
+                    text: "@-reference (Claude Code)",
+                    subText: "Copy '@\(short)'",
+                    run: { deliverAtReference(exact) }))
+            } else {
+                acts.append(Action(
+                    id: .filePath,
+                    text: "File path (over SSH)",
+                    subText: "Locate the file on \(remote.displayHost), copy its remote path",
+                    run: {
+                        RemoteFileCapture.retrieve(remote) { _, path, err in
+                            if let path {
+                                deliverPath(path)
+                            } else {
+                                Delivery.notify("ContextStack",
+                                                "Could not locate the file on "
+                                                + "\(remote.displayHost): \(err ?? "?")")
+                            }
+                        }
+                    }))
+            }
+        } else if let doc {
             let short = doc.replacingOccurrences(of: NSHomeDirectory(), with: "~")
             acts.append(Action(
                 id: .filePath,
@@ -131,13 +168,7 @@ enum PickerFlow {
                 text: "@-reference (Claude Code)",
                 subText: "Copy '@\(short)'",
                 run: { deliverAtReference(doc) }))
-            if RemoteFileCapture.isLikelyRemote(path: doc, entry: entry) {
-                acts.append(Action(
-                    id: .fileContents,
-                    text: "File contents (over SSH)",
-                    subText: "Remote file — fetch via the Zed SSH connection that owns it",
-                    run: { deliverContents(of: doc, entry: entry) }))
-            } else if !DocumentCapture.isDirectory(doc) {
+            if !DocumentCapture.isDirectory(doc) {
                 acts.append(Action(
                     id: .fileContents,
                     text: "File contents",
@@ -235,32 +266,28 @@ enum PickerFlow {
         if let data {
             Delivery.text(entry: entry, kind: "file contents",
                           source: path, content: data)
-            return
+        } else {
+            Delivery.notify("ContextStack",
+                            "Cannot copy contents: \(err ?? "?") — copied the path instead")
+            Delivery.setClipboard(path)
         }
-        if err == "cannot open file",
-           RemoteFileCapture.isLikelyRemote(path: path, entry: entry) {
-            guard let conn = RemoteFileCapture.zedConnection(forRemotePath: path) else {
+    }
+
+    private static func deliverRemoteContents(_ remote: RemoteFileCapture.Candidate,
+                                              entry: HistoryEntry) {
+        RemoteFileCapture.retrieve(remote) { text, path, err in
+            if let text {
+                Delivery.text(entry: entry,
+                              kind: "file contents (ssh \(remote.displayHost))",
+                              source: "\(remote.displayHost):\(path ?? "?")",
+                              content: text)
+            } else {
                 Delivery.notify("ContextStack",
-                                "Remote file, but no matching Zed SSH workspace found — "
-                                + "copied the path instead")
-                Delivery.setClipboard(path)
-                return
+                                "SSH fetch failed: \(err ?? "?")"
+                                + (remote.exactPath != nil ? " — copied the path instead" : ""))
+                if let exact = remote.exactPath { Delivery.setClipboard(exact) }
             }
-            RemoteFileCapture.fetch(path: path, via: conn) { text, fetchErr in
-                if let text {
-                    Delivery.text(entry: entry, kind: "file contents (ssh \(conn.host))",
-                                  source: "\(conn.host):\(path)", content: text)
-                } else {
-                    Delivery.notify("ContextStack",
-                                    "SSH fetch failed: \(fetchErr ?? "?") — copied the path instead")
-                    Delivery.setClipboard(path)
-                }
-            }
-            return
         }
-        Delivery.notify("ContextStack",
-                        "Cannot copy contents: \(err ?? "?") — copied the path instead")
-        Delivery.setClipboard(path)
     }
 
     private static func notifyNotFound(_ candidate: DocumentCapture.TitleCandidate) {

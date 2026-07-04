@@ -9,6 +9,9 @@ if CommandLine.arguments.contains("--ranker-selftest") {
 if CommandLine.arguments.contains("--doc-selftest") {
     DocSelfTest.run()
 }
+if CommandLine.arguments.contains("--remote-selftest") {
+    RemoteSelfTest.run()
+}
 if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
    CommandLine.arguments.count > i + 1 {
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
@@ -19,6 +22,29 @@ if let i = CommandLine.arguments.firstIndex(of: "--diag"),
     Diagnostics.run(appQuery: CommandLine.arguments[i + 1],
                     outPath: CommandLine.arguments[i + 2])
 }
+// Live test of the find-then-fetch path (VS Code/JetBrains style):
+// --remote-find-test <host> <filename> [root]
+if let i = CommandLine.arguments.firstIndex(of: "--remote-find-test"),
+   CommandLine.arguments.count > i + 2 {
+    let conn = RemoteFileCapture.Connection(host: CommandLine.arguments[i + 1],
+                                            port: nil, user: nil)
+    let root = CommandLine.arguments.count > i + 3 ? CommandLine.arguments[i + 3] : "."
+    let candidate = RemoteFileCapture.Candidate(
+        connection: conn, exactPath: nil,
+        filename: CommandLine.arguments[i + 2], searchRoots: [root])
+    var done = false
+    RemoteFileCapture.retrieve(candidate) { text, path, err in
+        if let text {
+            print("found \(path ?? "?"): \(text.count) chars")
+        } else {
+            print("error: \(err ?? "?")")
+        }
+        done = true
+    }
+    while !done { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1)) }
+    exit(0)
+}
+
 if let i = CommandLine.arguments.firstIndex(of: "--remote-test"),
    CommandLine.arguments.count > i + 1 {
     let path = CommandLine.arguments[i + 1]
