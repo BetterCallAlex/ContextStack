@@ -31,6 +31,7 @@ with the most likely one already on top, so **Enter-Enter** usually does it:
 | **Document window** (Preview, TextEdit, Xcode, Zed, …) | The file itself: contents, path, or `@path` for Claude Code. Resolved via Accessibility, window title, or Spotlight. |
 | **Remote files over SSH** (Zed, VS Code, Cursor, JetBrains) | Remote file contents — ContextStack works out host and path from the editor's own session data or window title and fetches with `ssh`. |
 | **Any window** | Screenshot (pasteable image + saved PNG) — works even for windows on other Spaces — or visible text via Accessibility. |
+| **The relevant lines** | Text you *selected* in the source window (offered on top when a selection exists), or the **visible excerpt** — just what's scrolled into view, not the whole buffer. |
 
 Every capture also lands in `~/ContextStack/` as a timestamped `.md`/`.png`
 with a source header, so Claude Code can read it by path.

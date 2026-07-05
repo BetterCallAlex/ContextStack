@@ -94,6 +94,9 @@ struct EntryResolution {
     let doc: String?
     let remote: RemoteFileCapture.Candidate?
     let titleCandidate: DocumentCapture.TitleCandidate?
+    /// Snapshot of the window's text selection at prewarm time — presence
+    /// gates the "Selected text" action; the capture re-reads live.
+    let selection: String?
 
     var kind: String {
         if isBrowser { return "browser tab" }
@@ -103,14 +106,19 @@ struct EntryResolution {
 
     static func compute(for entry: HistoryEntry) -> EntryResolution {
         if BrowserCapture.family(of: entry) != nil {
+            // Browsers: skip doc/AX tree work, but a selection in the page
+            // is still the strongest capture signal (focused-element read
+            // only — no walks through web content trees).
+            let selection = SelectionCapture.selection(in: entry, allowTreeWalk: false)
             return EntryResolution(isBrowser: true, doc: nil, remote: nil,
-                                   titleCandidate: nil)
+                                   titleCandidate: nil, selection: selection)
         }
         let doc = DocumentCapture.cheapDocumentPath(entry)
         let remote = RemoteFileCapture.candidate(for: entry, docPath: doc)
         let titleCandidate = (doc != nil || remote != nil)
             ? nil : DocumentCapture.titleCandidate(entry.title)
+        let selection = SelectionCapture.selection(in: entry, allowTreeWalk: true)
         return EntryResolution(isBrowser: false, doc: doc, remote: remote,
-                               titleCandidate: titleCandidate)
+                               titleCandidate: titleCandidate, selection: selection)
     }
 }

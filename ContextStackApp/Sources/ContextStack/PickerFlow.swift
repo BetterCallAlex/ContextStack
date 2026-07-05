@@ -116,6 +116,19 @@ enum PickerFlow {
         let remote = resolution.remote
         let candidate = resolution.titleCandidate
 
+        // A live selection is the user's own statement of what's relevant —
+        // canonical top spot when present.
+        if let selection = resolution.selection {
+            let preview = selection
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }.joined(separator: " ")
+            acts.append(Action(
+                id: .selectedText,
+                text: "Selected text",
+                subText: "“\(preview.prefix(64))\(preview.count > 64 ? "…" : "")”",
+                run: { SelectionCapture.captureSelection(entry, snapshot: selection) }))
+        }
+
         if isBrowser {
             acts.append(Action(
                 id: .pageText,
@@ -240,6 +253,11 @@ enum PickerFlow {
             run: { ScreenshotCapture.capture(entry, pathOnly: true) }))
 
         if !isBrowser {
+            acts.append(Action(
+                id: .visibleExcerpt,
+                text: "Visible excerpt",
+                subText: "Just the text scrolled into view — what you were reading",
+                run: { SelectionCapture.captureVisibleExcerpt(entry) }))
             acts.append(Action(
                 id: .windowText,
                 text: "Window text (best effort)",

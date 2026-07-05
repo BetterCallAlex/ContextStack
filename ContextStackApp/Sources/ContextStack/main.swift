@@ -17,6 +17,37 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Live check of selection + visible-excerpt reads against a running app:
+// --selection-test <app-query> <out-file>  (run via open -n -W ... --args)
+if let i = CommandLine.arguments.firstIndex(of: "--selection-test"),
+   CommandLine.arguments.count > i + 2 {
+    var out: [String] = ["=== selection test trusted=\(AXIsProcessTrusted())"]
+    let q = CommandLine.arguments[i + 1].lowercased()
+    if let target = NSWorkspace.shared.runningApplications.first(where: {
+        ($0.localizedName ?? "").lowercased().contains(q)
+    }) {
+        let appEl = AX.application(target.processIdentifier)
+        if let win = AX.element(appEl, kAXFocusedWindowAttribute as String) {
+            let entry = HistoryEntry(axWindow: win, pid: target.processIdentifier,
+                                     appName: target.localizedName ?? "?",
+                                     bundleID: target.bundleIdentifier ?? "",
+                                     title: AX.string(win, kAXTitleAttribute as String) ?? "")
+            out.append("app: \(entry.appName)  title: \(entry.title)")
+            let sel = SelectionCapture.selection(in: entry, allowTreeWalk: true)
+            out.append("selection: \(sel.map { "\($0.count) chars: \($0.prefix(80))" } ?? "none")")
+            let excerpt = SelectionCapture.visibleExcerpt(in: entry)
+            out.append("visible excerpt: \(excerpt.map { "\($0.count) chars, first line: \($0.split(separator: "\n").first.map(String.init) ?? "")" } ?? "none")")
+        } else {
+            out.append("no focused window")
+        }
+    } else {
+        out.append("no app matching \(q)")
+    }
+    try? out.joined(separator: "\n").appending("\n")
+        .write(toFile: CommandLine.arguments[i + 2], atomically: true, encoding: .utf8)
+    exit(0)
+}
+
 if let i = CommandLine.arguments.firstIndex(of: "--perf-test"),
    CommandLine.arguments.count > i + 2 {
     PerfTest.run(appQuery: CommandLine.arguments[i + 1],
