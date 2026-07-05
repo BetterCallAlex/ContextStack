@@ -46,7 +46,8 @@ enum Delivery {
         pb.setString(text, forType: .string)
     }
 
-    /// Deliver a text capture: clipboard + file + notification + auto-paste.
+    /// Deliver a text capture: clipboard + auto-paste immediately, archive
+    /// file + notification off the critical path.
     static func text(entry: HistoryEntry, kind: String, source: String?, content: String) {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -54,12 +55,17 @@ enum Delivery {
             + "Source: \(source ?? "n/a")\n"
             + "Captured: \(fmt.string(from: Date()))\n\n"
         let full = header + content
-        let path = saveCapture(basename: captureName(entry, ext: "md"), content: full)
         setClipboard(full)
-        notify("ContextStack: \(kind) copied",
-               "\(entry.appName) — \(entry.title) (\(content.count) chars)\n"
-               + "Saved: \(path ?? "not saved")")
         maybeAutoPaste()
+        let basename = captureName(entry, ext: "md")
+        let appName = entry.appName
+        let title = entry.title
+        DispatchQueue.global(qos: .utility).async {
+            let path = saveCapture(basename: basename, content: full)
+            notify("ContextStack: \(kind) copied",
+                   "\(appName) — \(title) (\(content.count) chars)\n"
+                   + "Saved: \(path ?? "not saved")")
+        }
     }
 
     static func notify(_ title: String, _ body: String) {
@@ -86,9 +92,14 @@ enum Delivery {
     /// window happens to be focused.
     static var suppressAutoPaste = false
 
+    /// Margin between clipboard write and the synthetic Cmd+V. The chooser
+    /// panel is non-activating, so the target app never lost focus — this
+    /// only needs to outlive the panel teardown.
+    static let autoPasteDelay: TimeInterval = 0.12
+
     static func maybeAutoPaste() {
         guard Config.autoPaste, !suppressAutoPaste else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoPasteDelay) {
             let src = CGEventSource(stateID: .combinedSessionState)
             let vKey: CGKeyCode = 9
             guard let down = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: true),

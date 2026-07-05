@@ -7,11 +7,36 @@ import UniformTypeIdentifiers
 /// permission). The SCWindow is matched to the AX window by pid + title,
 /// falling back to pid + frame.
 enum ScreenshotCapture {
+    /// Window-list enumeration is the slow half of a capture (~100–300 ms).
+    /// It's pure metadata, so it can be prefetched when the action chooser
+    /// opens and reused for a few seconds.
+    private static var contentCache: (content: SCShareableContent, at: Date)?
+
+    static func prefetchShareableContent() {
+        Task { @MainActor in
+            if let c = contentCache, Date().timeIntervalSince(c.at) < 5 { return }
+            if let content = try? await SCShareableContent
+                .excludingDesktopWindows(false, onScreenWindowsOnly: false) {
+                contentCache = (content, Date())
+            }
+        }
+    }
+
+    @MainActor
+    private static func shareableContent() async throws -> SCShareableContent {
+        if let c = contentCache, Date().timeIntervalSince(c.at) < 5 {
+            return c.content
+        }
+        let content = try await SCShareableContent
+            .excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        contentCache = (content, Date())
+        return content
+    }
+
     static func capture(_ entry: HistoryEntry, pathOnly: Bool) {
         Task { @MainActor in
             do {
-                let content = try await SCShareableContent
-                    .excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                let content = try await shareableContent()
                 let appWindows = content.windows.filter {
                     $0.owningApplication?.processID == entry.pid
                 }
@@ -89,28 +114,39 @@ enum ScreenshotCapture {
     }
 
     private static func deliver(_ image: CGImage, entry: HistoryEntry, pathOnly: Bool) {
-        Delivery.ensureDir()
         let path = Config.captureDir + "/" + Delivery.captureName(entry, ext: "png")
-        let url = URL(fileURLWithPath: path)
-        guard let dest = CGImageDestinationCreateWithURL(
-            url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-            Delivery.notify("ContextStack", "Could not write PNG to \(path)")
-            return
-        }
-        CGImageDestinationAddImage(dest, image, nil)
-        CGImageDestinationFinalize(dest)
 
         if pathOnly {
+            // The path is what gets pasted — the file must exist first.
+            guard writePNG(image, to: path) else {
+                Delivery.notify("ContextStack", "Could not write PNG to \(path)")
+                return
+            }
             Delivery.setClipboard(path)
+            Delivery.maybeAutoPaste()
             Delivery.notify("ContextStack: screenshot path copied", path)
         } else {
+            // Clipboard + paste immediately; PNG encode/write can lag behind.
             let nsImage = NSImage(cgImage: image,
                                   size: NSSize(width: image.width, height: image.height))
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.writeObjects([nsImage])
-            Delivery.notify("ContextStack: screenshot copied as image", "Also saved: \(path)")
+            Delivery.maybeAutoPaste()
+            DispatchQueue.global(qos: .utility).async {
+                let ok = writePNG(image, to: path)
+                Delivery.notify("ContextStack: screenshot copied as image",
+                                ok ? "Also saved: \(path)" : "PNG save failed")
+            }
         }
-        Delivery.maybeAutoPaste()
+    }
+
+    private static func writePNG(_ image: CGImage, to path: String) -> Bool {
+        Delivery.ensureDir()
+        guard let dest = CGImageDestinationCreateWithURL(
+            URL(fileURLWithPath: path) as CFURL,
+            UTType.png.identifier as CFString, 1, nil) else { return false }
+        CGImageDestinationAddImage(dest, image, nil)
+        return CGImageDestinationFinalize(dest)
     }
 }

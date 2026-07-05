@@ -50,6 +50,10 @@ final class HistoryEntry {
     private var resolutionCache: (value: EntryResolution, at: Date)?
     private var prewarming = false
 
+    /// Prefetched browser-tab metadata (URL + title, no content) — filled
+    /// in the background while the action chooser is open.
+    var cachedTab: (url: String, title: String, at: Date)?
+
     func cachedResolution() -> EntryResolution? {
         guard let c = resolutionCache,
               Date().timeIntervalSince(c.at) < Self.resolutionTTL else { return nil }

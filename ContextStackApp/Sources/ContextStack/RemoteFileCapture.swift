@@ -405,7 +405,12 @@ enum RemoteFileCapture {
         DispatchQueue.global().async {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-            var args = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6"]
+            // Connection multiplexing: the first command pays the handshake,
+            // repeats within 60 s ride the same connection (~instant).
+            var args = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
+                        "-o", "ControlMaster=auto",
+                        "-o", "ControlPath=/tmp/contextstack-ssh-%C",
+                        "-o", "ControlPersist=60"]
             if let port = conn.port { args += ["-p", String(port)] }
             let target = conn.user.map { "\($0)@\(conn.host)" } ?? conn.host
             args += [target, command]

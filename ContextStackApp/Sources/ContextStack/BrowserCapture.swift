@@ -28,13 +28,15 @@ enum BrowserCapture {
         return result
     }
 
-    /// Find the tab matching the remembered window title (the tab may have
-    /// moved or another tab may be active now); fall back to the active tab.
-    static func resolveTab(family: Family, appName: String,
-                           wantedTitle: String) -> (url: String, title: String)? {
+    private static func resolveTabScript(family: Family, appName: String,
+                                         wantedTitle: String,
+                                         joinedReturn: Bool) -> String {
         let titleProp = family == .chromium ? "title" : "name"
         let activeTab = family == .chromium ? "active tab" : "current tab"
-        let script = """
+        let ret = joinedReturn
+            ? "return theURL & \"\\n\" & theTitle"
+            : "return {theURL, theTitle}"
+        return """
         tell application "\(appName)"
         	set wanted to "\(escAS(wantedTitle))"
         	set theURL to ""
@@ -51,13 +53,59 @@ enum BrowserCapture {
         		set theURL to URL of \(activeTab) of front window
         		set theTitle to \(titleProp) of \(activeTab) of front window
         	end if
-        	return {theURL, theTitle}
+        	\(ret)
         end tell
         """
+    }
+
+    /// Find the tab matching the remembered window title (the tab may have
+    /// moved or another tab may be active now); fall back to the active tab.
+    static func resolveTab(family: Family, appName: String,
+                           wantedTitle: String) -> (url: String, title: String)? {
+        let script = resolveTabScript(family: family, appName: appName,
+                                      wantedTitle: wantedTitle, joinedReturn: false)
         guard let result = runAppleScript(script), result.numberOfItems >= 1,
               let url = result.atIndex(1)?.stringValue, !url.isEmpty else { return nil }
         let title = result.atIndex(2)?.stringValue ?? ""
         return (url, title)
+    }
+
+    /// Fresh prefetched tab metadata for the entry, if any.
+    static func cachedTab(_ entry: HistoryEntry) -> (url: String, title: String)? {
+        guard let c = entry.cachedTab, Date().timeIntervalSince(c.at) < 10
+        else { return nil }
+        return (c.url, c.title)
+    }
+
+    /// Resolve the tab's URL + title in the background (osascript subprocess
+    /// — safe off the main thread, unlike NSAppleScript) so link and page
+    /// captures skip the AppleScript round trip at pick time. Metadata only,
+    /// no page content is touched.
+    static func prefetchTab(_ entry: HistoryEntry) {
+        guard let (family, appName) = family(of: entry),
+              cachedTab(entry) == nil else { return }
+        let script = resolveTabScript(family: family, appName: appName,
+                                      wantedTitle: entry.title, joinedReturn: true)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-e", script]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = FileHandle.nullDevice
+            do { try proc.run() } catch { return }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0,
+                  let out = String(data: data, encoding: .utf8) else { return }
+            let parts = out.split(separator: "\n", maxSplits: 1)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard let url = parts.first, !url.isEmpty else { return }
+            let title = parts.count > 1 ? parts[1] : ""
+            DispatchQueue.main.async {
+                entry.cachedTab = (url, title, Date())
+            }
+        }
     }
 
     /// Run JavaScript in the remembered tab (needs "Allow JavaScript from
@@ -123,7 +171,8 @@ enum BrowserCapture {
 
     static func capturePage(_ entry: HistoryEntry, wantHTML: Bool) {
         guard let (family, appName) = family(of: entry) else { return }
-        let resolved = resolveTab(family: family, appName: appName, wantedTitle: entry.title)
+        let resolved = cachedTab(entry)
+            ?? resolveTab(family: family, appName: appName, wantedTitle: entry.title)
         let url = resolved?.url
 
         // Preferred: run JS in the live tab — sees the rendered page,
@@ -174,8 +223,9 @@ enum BrowserCapture {
 
     static func captureLink(_ entry: HistoryEntry) {
         guard let (family, appName) = family(of: entry) else { return }
-        guard let (url, title) = resolveTab(family: family, appName: appName,
-                                            wantedTitle: entry.title) else {
+        guard let (url, title) = cachedTab(entry)
+                ?? resolveTab(family: family, appName: appName,
+                              wantedTitle: entry.title) else {
             Delivery.notify("ContextStack", "Could not get a URL from \(appName)")
             return
         }

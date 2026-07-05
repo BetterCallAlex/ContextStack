@@ -46,6 +46,12 @@ enum PickerFlow {
 
     private static func showActions(for entry: HistoryEntry, targetBundleID: String) {
         let resolution = entry.resolution()
+        // Metadata-only prefetches while the user reads the action list:
+        // tab URL/title for browser entries, the ScreenCaptureKit window
+        // list for everyone. No content is captured until an action is
+        // actually picked.
+        if resolution.isBrowser { BrowserCapture.prefetchTab(entry) }
+        ScreenshotCapture.prefetchShareableContent()
         let context = RankContext(targetBundleID: targetBundleID,
                                   sourceBundleID: entry.bundleID,
                                   kind: resolution.kind,
