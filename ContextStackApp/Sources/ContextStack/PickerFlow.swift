@@ -23,15 +23,37 @@ enum PickerFlow {
         // Resolve every entry in the background now; by the time the user
         // picks one, the expensive part is already done.
         for e in entries { e.prewarmResolution() }
-        let items = entries.enumerated().map { i, e in
+
+        // Window prediction: recency ORDER is sacred (muscle memory), but the
+        // preselection highlight moves to the learned pick — a selection in a
+        // window is a strong (learned, per-user) hint it's the paste source.
+        let windowFeatures = entries.map { e in
+            WindowRanker.EntryFeatures(
+                src: e.bundleID,
+                kind: quickKind(e),
+                sel: e.cachedResolution()?.selection != nil)
+        }
+        let predicted = WindowRanker.shared.predictedIndex(
+            target: targetBundleID, entries: windowFeatures) ?? 0
+
+        var items = entries.enumerated().map { i, e in
             ChooserItem(
                 text: "\(e.appName) — \(e.title.isEmpty ? "(untitled)" : e.title)",
                 subText: "\(quickKind(e)) · \(e.agoText)",
                 image: e.appIcon,
                 index: i)
         }
-        Chooser.shared.show(items: items, placeholder: "Recent windows…") { idx in
+        if predicted > 0 {
+            let p = items[predicted]
+            items[predicted] = ChooserItem(text: p.text,
+                                           subText: p.subText + "  · likely",
+                                           image: p.image, index: p.index)
+        }
+        Chooser.shared.show(items: items, placeholder: "Recent windows…",
+                            preselect: predicted) { idx in
             guard let idx else { return }
+            WindowRanker.shared.record(target: targetBundleID,
+                                       entries: windowFeatures, chosen: idx)
             showActions(for: entries[idx], targetBundleID: targetBundleID)
         }
     }
@@ -56,7 +78,8 @@ enum PickerFlow {
                                   sourceBundleID: entry.bundleID,
                                   kind: resolution.kind,
                                   titleTokens: ActionRanker.tokenize(entry.title),
-                                  hourBucket: RankContext.hourBucket())
+                                  hourBucket: RankContext.hourBucket(),
+                                  hasSelection: resolution.selection != nil)
         let actions = ranked(actionsFor(entry, resolution), context: context)
         let items = actions.enumerated().map { i, a in
             ChooserItem(text: a.text, subText: a.subText, image: nil, index: i)

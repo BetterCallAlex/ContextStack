@@ -42,6 +42,8 @@ updated: 2026-07-06
 **Links:** [[action-ranking]], [[delivery]]
 
 ## Changelog
+- 2026-07-06 — Window preselection: learned highlight ([[WindowRanker.swift]]),
+  recency order untouched; `· likely` badge on predicted row (0a0e257).
 - 2026-07-06 — Initial note; state as of a744b63.
 - 2026-07-05 — Prewarm/caching, AX timeouts, no stage delay (db10678); tab +
   SC-content prefetch at action-open (359a7eb).

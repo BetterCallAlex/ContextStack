@@ -22,6 +22,10 @@ struct RankContext {
     let titleTokens: [String]
     /// 0–3: night / morning / afternoon / evening.
     let hourBucket: Int
+    /// The source window had a text selection. Fed as a learned feature —
+    /// some users select to paste, others select to read; the model measures
+    /// which, per app.
+    let hasSelection: Bool
 
     static func hourBucket(for date: Date = Date()) -> Int {
         Calendar.current.component(.hour, from: date) / 6
@@ -91,6 +95,8 @@ final class ActionRanker {
         let kind: String
         let tokens: [String]
         let hour: Int
+        /// Optional so pre-selection-feature logs replay unchanged.
+        let sel: Bool?
         let presented: [String]
         let chosen: String
     }
@@ -155,6 +161,11 @@ final class ActionRanker {
             "src+kind:\(c.sourceBundleID)|\(c.kind)",
             "hour:\(c.hourBucket)",
         ]
+        if c.hasSelection {
+            names.append("sel:1")
+            names.append("sel+src:\(c.sourceBundleID)")
+            names.append("sel+tgt:\(c.targetBundleID)")
+        }
         for t in c.titleTokens {
             names.append("tok:\(t)")
             names.append("src+tok:\(c.sourceBundleID)|\(t)")
@@ -239,6 +250,7 @@ final class ActionRanker {
                           kind: context.kind,
                           tokens: context.titleTokens,
                           hour: context.hourBucket,
+                          sel: context.hasSelection,
                           presented: presented.map(\.rawValue),
                           chosen: chosen.rawValue)
         appendToLog(event)
@@ -271,7 +283,8 @@ final class ActionRanker {
                                       sourceBundleID: event.source,
                                       kind: event.kind,
                                       titleTokens: event.tokens,
-                                      hourBucket: event.hour)
+                                      hourBucket: event.hour,
+                                      hasSelection: event.sel ?? false)
             let presented = event.presented.compactMap(ActionID.init(rawValue:))
             let age = max(0, now - event.ts)
             let weight = max(Self.replayWeightFloor,

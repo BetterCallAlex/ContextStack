@@ -7,8 +7,9 @@ updated: 2026-07-06
 
 # action-ranking
 
-**Does:** reorders the action chooser by predicted pick probability; top row =
-Enter-Enter default.
+**Does:** two learned heads. `ActionRanker` reorders the action chooser (top
+row = Enter-Enter default); `WindowRanker` moves the picker's preselection
+highlight (never the order — recency is muscle memory).
 
 **Why it exists / key decisions:**
 - Model: single-layer softmax (online multinomial logistic regression) over
@@ -25,6 +26,17 @@ Enter-Enter default.
   is source of truth; weights = cache rebuilt by replay at launch → feature
   set can change without losing data. Replay recency-weighted (30-day
   half-life, floor 0.25) so habits can change.
+- **Selection as feature, not rule**: `sel`, `sel×src`, `sel×tgt` in both
+  heads. Some users select to paste, others to read — the model measures
+  which, per app, instead of a static boost. Masking already gave the
+  selectedText class a learned prior; these crosses let selection shift the
+  *other* actions and the window choice too.
+- `WindowRanker` ([[WindowRanker.swift]]): pointwise scorer, single weight
+  vector, softmax over presented entries; features src, tgt×src, kind,
+  recency-rank bucket (model learns the recency prior's true strength), sel
+  crosses. Own log `window-events.jsonl`. Predicts only after ≥20 events and
+  a real margin; otherwise highlight stays on most-recent. Predicted row gets
+  `· likely` badge.
 - Picks logged even when `smartRanking` off. No implicit negatives (explicitly
   deferred by Alex).
 - `· learned` badge on top row only when ≥5 samples for source app and top ≠
@@ -40,6 +52,9 @@ Enter-Enter default.
 **Links:** [[picker]], [[selection-viewport]]
 
 ## Changelog
+- 2026-07-06 — Selection as learned feature in both heads; new WindowRanker
+  preselecting the picker highlight. Selftests: sel-flip 100%,
+  window-ranker 100%, holds back <20 events.
 - 2026-07-06 — Initial note; state as of a744b63.
 - 2026-07-05 — Sequence features + recency-weighted replay (a1f5aaa).
 - 2026-07-01 — First version: static context features (6627071).

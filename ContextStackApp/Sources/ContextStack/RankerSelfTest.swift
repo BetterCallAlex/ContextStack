@@ -34,25 +34,25 @@ enum RankerSelfTest {
                      context: RankContext(targetBundleID: claude, sourceBundleID: zed,
                                           kind: "document",
                                           titleTokens: ["projecta", "main", "rs"],
-                                          hourBucket: 2),
+                                          hourBucket: 2, hasSelection: false),
                      presented: documentActions, chosen: .atReference),
             Scenario(name: "Zed projectB → screenshot",
                      context: RankContext(targetBundleID: claude, sourceBundleID: zed,
                                           kind: "document",
                                           titleTokens: ["projectb", "app", "tsx"],
-                                          hourBucket: 2),
+                                          hourBucket: 2, hasSelection: false),
                      presented: documentActions, chosen: .screenshotClipboard),
             Scenario(name: "Safari → Claude: page text",
                      context: RankContext(targetBundleID: claude, sourceBundleID: safari,
                                           kind: "browser tab",
                                           titleTokens: ["anthropic", "docs"],
-                                          hourBucket: 2),
+                                          hourBucket: 2, hasSelection: false),
                      presented: browserActions, chosen: .pageText),
             Scenario(name: "Safari → terminal: link",
                      context: RankContext(targetBundleID: terminal, sourceBundleID: safari,
                                           kind: "browser tab",
                                           titleTokens: ["anthropic", "docs"],
-                                          hourBucket: 2),
+                                          hourBucket: 2, hasSelection: false),
                      presented: browserActions, chosen: .linkMarkdown),
         ]
 
@@ -94,7 +94,7 @@ enum RankerSelfTest {
         let burstCtx = RankContext(targetBundleID: claude, sourceBundleID: zed,
                                    kind: "document",
                                    titleTokens: ["projecta", "main", "rs"],
-                                   hourBucket: 2)
+                                   hourBucket: 2, hasSelection: false)
         var burstCorrect = 0
         var burstTotal = 0
         let blockChoices: [ActionID] = [.atReference, .screenshotClipboard]
@@ -125,14 +125,80 @@ enum RankerSelfTest {
         let fresh = RankContext(targetBundleID: claude, sourceBundleID: zed,
                                 kind: "document",
                                 titleTokens: ["projectc", "lib", "py"],
-                                hourBucket: 2)
+                                hourBucket: 2, hasSelection: false)
         let probs = ranker.probabilities(context: fresh, presented: documentActions)
         let top = documentActions.max { (probs[$0] ?? 0) < (probs[$1] ?? 0) }!
         let plausible: Set<ActionID> = [.atReference, .screenshotClipboard]
         print("cold-start unseen Zed project → \(top.rawValue) "
               + (plausible.contains(top) ? "(app-level backoff ok)" : "(UNEXPECTED)"))
 
+        // Selection as a learned feature: identical context and identical
+        // presented set; the pick depends only on whether a selection exists.
+        // The sel pattern is deliberately non-alternating so the sequence
+        // features can't stand in for it.
+        let selRanker = ActionRanker(eventsURL: nil)
+        let selPattern = [true, false, false, true, false, true, true, false]
+        var selCorrect = 0
+        var selTotal = 0
+        for round in 0..<12 {
+            for sel in selPattern {
+                let ctx = RankContext(targetBundleID: claude, sourceBundleID: zed,
+                                      kind: "document",
+                                      titleTokens: ["projecta", "main", "rs"],
+                                      hourBucket: 2, hasSelection: sel)
+                let chosen: ActionID = sel ? .fileContents : .screenshotClipboard
+                let probs = selRanker.probabilities(context: ctx,
+                                                    presented: documentActions)
+                let predicted = documentActions.max {
+                    (probs[$0] ?? 0) < (probs[$1] ?? 0)
+                }!
+                if round >= 6 {
+                    selTotal += 1
+                    if predicted == chosen { selCorrect += 1 }
+                }
+                selRanker.record(context: ctx, presented: documentActions,
+                                 chosen: chosen)
+            }
+        }
+        let selAccuracy = Double(selCorrect) / Double(selTotal)
+        print(String(format: "selection-feature accuracy (identical context): %.1f%%",
+                     selAccuracy * 100))
+
+        // Window ranker: recency order fixed; the user picks the Zed window
+        // when it has a selection, the most-recent Safari window otherwise.
+        let winRanker = WindowRanker(eventsURL: nil)
+        func winEntries(zedSel: Bool) -> [WindowRanker.EntryFeatures] {
+            [WindowRanker.EntryFeatures(src: safari, kind: "browser tab", sel: false),
+             WindowRanker.EntryFeatures(src: zed, kind: "document", sel: zedSel),
+             WindowRanker.EntryFeatures(src: terminal, kind: "window", sel: false)]
+        }
+        var winCorrect = 0
+        var winTotal = 0
+        var earlyPrediction: Int?
+        for round in 0..<40 {
+            let zedSel = selPattern[round % selPattern.count]
+            let entries = winEntries(zedSel: zedSel)
+            let chosen = zedSel ? 1 : 0
+            if round == 5 {
+                earlyPrediction = winRanker.predictedIndex(target: claude,
+                                                           entries: entries)
+            }
+            if round >= 20 {
+                let probs = winRanker.probabilities(target: claude, entries: entries)
+                let predicted = probs.indices.max { probs[$0] < probs[$1] }!
+                winTotal += 1
+                if predicted == chosen { winCorrect += 1 }
+            }
+            winRanker.record(target: claude, entries: entries, chosen: chosen)
+        }
+        let winAccuracy = Double(winCorrect) / Double(winTotal)
+        print(String(format: "window-ranker accuracy (selection-driven): %.1f%%",
+                     winAccuracy * 100))
+        print("window-ranker holds back before 20 events: "
+              + (earlyPrediction == nil ? "ok" : "UNEXPECTED"))
+
         let pass = accuracy >= 0.9 && burstAccuracy >= 0.75 && plausible.contains(top)
+            && selAccuracy >= 0.8 && winAccuracy >= 0.8 && earlyPrediction == nil
         print(pass ? "PASS" : "FAIL")
         exit(pass ? 0 : 1)
     }

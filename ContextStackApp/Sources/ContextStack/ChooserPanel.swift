@@ -35,7 +35,8 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
     private var filtered: [ChooserItem] = []
     private var onPick: ((Int?) -> Void)?
 
-    func show(items: [ChooserItem], placeholder: String, onPick: @escaping (Int?) -> Void) {
+    func show(items: [ChooserItem], placeholder: String, preselect: Int = 0,
+              onPick: @escaping (Int?) -> Void) {
         if panel == nil { buildPanel() }
         // Replace any pending callback (e.g. re-invoking the hotkey while open).
         self.onPick = onPick
@@ -43,6 +44,11 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
         field.stringValue = ""
         field.placeholderString = placeholder
         applyFilter("")
+        if preselect > 0, preselect < filtered.count {
+            table.selectRowIndexes(IndexSet(integer: preselect),
+                                   byExtendingSelection: false)
+            table.scrollRowToVisible(preselect)
+        }
         positionPanel()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(field)
