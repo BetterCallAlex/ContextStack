@@ -30,7 +30,7 @@ enum AXTextCapture {
             Delivery.text(entry: entry, kind: "window text (Accessibility)",
                           source: entry.appName, content: text)
         } else {
-            Delivery.notify("ContextStack",
+            Delivery.failure("ContextStack",
                             "No text found via Accessibility — try the screenshot action instead")
         }
     }

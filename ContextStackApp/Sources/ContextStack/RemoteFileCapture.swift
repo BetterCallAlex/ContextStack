@@ -103,10 +103,7 @@ enum RemoteFileCapture {
                          filename: nil, searchRoots: [])
     }
 
-    /// Find the SSH connection whose workspace root is the longest prefix of
-    /// the remote path, from Zed's session db (read-only, immutable open so
-    /// a running Zed's locks don't matter).
-    static func zedConnection(forRemotePath path: String) -> Connection? {
+    static func zedStableDBPath() -> String? {
         guard let support = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask).first
         else { return nil }
@@ -115,9 +112,34 @@ enum RemoteFileCapture {
             at: dbDir, includingPropertiesForKeys: nil),
               let stable = entries.first(where: { $0.lastPathComponent.hasSuffix("-stable") })
         else { return nil }
+        return stable.appendingPathComponent("db.sqlite").path
+    }
 
+    /// Last recorded scroll position (top visible row) for a buffer in
+    /// Zed's session db — Zed doesn't expose its viewport through AX, but
+    /// it persists it here.
+    static func zedScrollTopRow(forBufferPath path: String) -> Int? {
+        guard let dbPath = zedStableDBPath() else { return nil }
+        let escaped = path.replacingOccurrences(of: "'", with: "''")
+        var row: Int?
+        query(dbPath: dbPath,
+              sql: """
+              SELECT scroll_top_row FROM editors
+              WHERE buffer_path = '\(escaped)'
+              ORDER BY item_id DESC LIMIT 1
+              """) { stmt in
+            row = Int(sqlite3_column_int(stmt, 0))
+        }
+        return row
+    }
+
+    /// Find the SSH connection whose workspace root is the longest prefix of
+    /// the remote path, from Zed's session db (read-only, immutable open so
+    /// a running Zed's locks don't matter).
+    static func zedConnection(forRemotePath path: String) -> Connection? {
+        guard let dbPath = zedStableDBPath() else { return nil }
         var best: Connection?
-        query(dbPath: stable.appendingPathComponent("db.sqlite").path,
+        query(dbPath: dbPath,
               sql: """
               SELECT w.paths, c.host, c.port, c.user
               FROM workspaces w

@@ -187,7 +187,7 @@ enum BrowserCapture {
 
         // Fallback: plain fetch of the URL (no login/session, but always works).
         guard let url, let fetchURL = URL(string: url) else {
-            Delivery.notify("ContextStack",
+            Delivery.failure("ContextStack",
                             "Could not get a URL from \(appName) "
                             + "(check Automation permission for ContextStack)")
             return
@@ -198,7 +198,7 @@ enum BrowserCapture {
                   let body = String(data: data, encoding: .utf8)
                     ?? String(data: data, encoding: .isoLatin1) else {
                 DispatchQueue.main.async {
-                    Delivery.notify("ContextStack", "Fetch failed (\(status)) for \(url)")
+                    Delivery.failure("ContextStack", "Fetch failed (\(status)) for \(url)")
                 }
                 return
             }
@@ -226,7 +226,7 @@ enum BrowserCapture {
         guard let (url, title) = cachedTab(entry)
                 ?? resolveTab(family: family, appName: appName,
                               wantedTitle: entry.title) else {
-            Delivery.notify("ContextStack", "Could not get a URL from \(appName)")
+            Delivery.failure("ContextStack", "Could not get a URL from \(appName)")
             return
         }
         let label = title.isEmpty ? (entry.title.isEmpty ? url : entry.title) : title

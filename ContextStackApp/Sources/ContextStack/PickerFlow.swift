@@ -175,7 +175,7 @@ enum PickerFlow {
                             if let path {
                                 deliverPath(path)
                             } else {
-                                Delivery.notify("ContextStack",
+                                Delivery.failure("ContextStack",
                                                 "Could not locate the file on "
                                                 + "\(remote.displayHost): \(err ?? "?")")
                             }
@@ -253,11 +253,20 @@ enum PickerFlow {
             run: { ScreenshotCapture.capture(entry, pathOnly: true) }))
 
         if !isBrowser {
-            acts.append(Action(
-                id: .visibleExcerpt,
-                text: "Visible excerpt",
-                subText: "Just the text scrolled into view — what you were reading",
-                run: { SelectionCapture.captureVisibleExcerpt(entry) }))
+            // Only offer the excerpt when some path can actually serve it:
+            // an AX text view, or Zed's session-recorded scroll position.
+            let zedExcerptEligible = entry.bundleID == "dev.zed.Zed"
+                && (resolution.doc ?? resolution.remote?.exactPath) != nil
+            if resolution.hasTextView || zedExcerptEligible {
+                acts.append(Action(
+                    id: .visibleExcerpt,
+                    text: "Visible excerpt",
+                    subText: zedExcerptEligible && !resolution.hasTextView
+                        ? "The lines around Zed's last saved scroll position"
+                        : "Just the text scrolled into view — what you were reading",
+                    run: { SelectionCapture.captureVisibleExcerpt(entry,
+                                                                  resolution: resolution) }))
+            }
             acts.append(Action(
                 id: .windowText,
                 text: "Window text (best effort)",
@@ -298,7 +307,7 @@ enum PickerFlow {
             Delivery.text(entry: entry, kind: "file contents",
                           source: path, content: data)
         } else {
-            Delivery.notify("ContextStack",
+            Delivery.failure("ContextStack",
                             "Cannot copy contents: \(err ?? "?") — copied the path instead")
             Delivery.setClipboard(path)
         }
@@ -313,7 +322,7 @@ enum PickerFlow {
                               source: "\(remote.displayHost):\(path ?? "?")",
                               content: text)
             } else {
-                Delivery.notify("ContextStack",
+                Delivery.failure("ContextStack",
                                 "SSH fetch failed: \(err ?? "?")"
                                 + (remote.exactPath != nil ? " — copied the path instead" : ""))
                 if let exact = remote.exactPath { Delivery.setClipboard(exact) }
@@ -322,7 +331,7 @@ enum PickerFlow {
     }
 
     private static func notifyNotFound(_ candidate: DocumentCapture.TitleCandidate) {
-        Delivery.notify("ContextStack",
+        Delivery.failure("ContextStack",
                         "'\(candidate.filename)' not found via Spotlight — "
                         + "try Window text or Screenshot")
     }

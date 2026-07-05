@@ -41,7 +41,7 @@ enum ScreenshotCapture {
                     $0.owningApplication?.processID == entry.pid
                 }
                 guard let scWindow = match(entry, in: appWindows) else {
-                    Delivery.notify("ContextStack",
+                    Delivery.failure("ContextStack",
                                     "Snapshot failed — window not found (closed?)")
                     return
                 }
@@ -68,12 +68,12 @@ enum ScreenshotCapture {
                 if let image = legacyCapture(windowID: scWindow.windowID) {
                     deliver(image, entry: entry, pathOnly: pathOnly)
                 } else {
-                    Delivery.notify("ContextStack",
+                    Delivery.failure("ContextStack",
                                     "Snapshot failed — window may be minimized; "
                                     + "bring it on screen and try again")
                 }
             } catch {
-                Delivery.notify("ContextStack",
+                Delivery.failure("ContextStack",
                                 "Snapshot failed — check the Screen Recording permission "
                                 + "(\(error.localizedDescription))")
             }
@@ -119,7 +119,7 @@ enum ScreenshotCapture {
         if pathOnly {
             // The path is what gets pasted — the file must exist first.
             guard writePNG(image, to: path) else {
-                Delivery.notify("ContextStack", "Could not write PNG to \(path)")
+                Delivery.failure("ContextStack", "Could not write PNG to \(path)")
                 return
             }
             Delivery.setClipboard(path)

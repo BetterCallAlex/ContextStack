@@ -68,6 +68,13 @@ enum Delivery {
         }
     }
 
+    /// Failure feedback must not depend on the (optional) notification
+    /// permission — beep so silence never masks a failed capture.
+    static func failure(_ title: String, _ body: String) {
+        DispatchQueue.main.async { NSSound.beep() }
+        notify(title, body)
+    }
+
     static func notify(_ title: String, _ body: String) {
         csLog(title, "—", body)
         guard Config.notifyOnCopy else { return }

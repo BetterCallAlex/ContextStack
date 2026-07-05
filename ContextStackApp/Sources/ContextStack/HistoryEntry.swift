@@ -97,6 +97,9 @@ struct EntryResolution {
     /// Snapshot of the window's text selection at prewarm time — presence
     /// gates the "Selected text" action; the capture re-reads live.
     let selection: String?
+    /// Window exposes a text view with a visible range (gates "Visible
+    /// excerpt" together with the Zed-session path).
+    let hasTextView: Bool
 
     var kind: String {
         if isBrowser { return "browser tab" }
@@ -111,7 +114,8 @@ struct EntryResolution {
             // only — no walks through web content trees).
             let selection = SelectionCapture.selection(in: entry, allowTreeWalk: false)
             return EntryResolution(isBrowser: true, doc: nil, remote: nil,
-                                   titleCandidate: nil, selection: selection)
+                                   titleCandidate: nil, selection: selection,
+                                   hasTextView: false)
         }
         let doc = DocumentCapture.cheapDocumentPath(entry)
         let remote = RemoteFileCapture.candidate(for: entry, docPath: doc)
@@ -119,6 +123,7 @@ struct EntryResolution {
             ? nil : DocumentCapture.titleCandidate(entry.title)
         let selection = SelectionCapture.selection(in: entry, allowTreeWalk: true)
         return EntryResolution(isBrowser: false, doc: doc, remote: remote,
-                               titleCandidate: titleCandidate, selection: selection)
+                               titleCandidate: titleCandidate, selection: selection,
+                               hasTextView: SelectionCapture.hasVisibleTextView(entry))
     }
 }

@@ -37,6 +37,13 @@ if let i = CommandLine.arguments.firstIndex(of: "--selection-test"),
             out.append("selection: \(sel.map { "\($0.count) chars: \($0.prefix(80))" } ?? "none")")
             let excerpt = SelectionCapture.visibleExcerpt(in: entry)
             out.append("visible excerpt: \(excerpt.map { "\($0.count) chars, first line: \($0.split(separator: "\n").first.map(String.init) ?? "")" } ?? "none")")
+            let res = EntryResolution.compute(for: entry)
+            out.append("hasTextView: \(res.hasTextView)  doc: \(res.doc ?? "nil")")
+            if entry.bundleID == "dev.zed.Zed",
+               let p = res.doc ?? res.remote?.exactPath {
+                let row = RemoteFileCapture.zedScrollTopRow(forBufferPath: p)
+                out.append("zed scrollTopRow(\(p)): \(row.map(String.init) ?? "nil")")
+            }
         } else {
             out.append("no focused window")
         }

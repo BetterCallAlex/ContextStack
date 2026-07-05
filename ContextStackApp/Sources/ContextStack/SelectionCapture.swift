@@ -43,8 +43,8 @@ enum SelectionCapture {
                              allowTreeWalk: BrowserCapture.family(of: entry) == nil)
             ?? snapshot
         guard let text else {
-            Delivery.notify("ContextStack",
-                            "No selection found in that window anymore")
+            Delivery.failure("ContextStack",
+                             "No selection found in that window anymore")
             return
         }
         Delivery.text(entry: entry, kind: "selected text",
@@ -80,15 +80,71 @@ enum SelectionCapture {
         return nil
     }
 
-    static func captureVisibleExcerpt(_ entry: HistoryEntry) {
+    /// True when the window exposes a text view we could excerpt from —
+    /// gates the action so apps like Zed (no AX text elements) don't get a
+    /// dead menu row unless the Zed-session path below can serve them.
+    static func hasVisibleTextView(_ entry: HistoryEntry) -> Bool {
+        mainTextElement(in: entry) != nil
+    }
+
+    static func captureVisibleExcerpt(_ entry: HistoryEntry, resolution: EntryResolution) {
         if let text = visibleExcerpt(in: entry) {
             Delivery.text(entry: entry, kind: "visible excerpt",
                           source: entry.appName, content: cap(text))
-        } else {
-            Delivery.notify("ContextStack",
-                            "No readable text view found — capturing full window text instead")
-            AXTextCapture.captureWindowText(entry)
+            return
         }
+        zedSessionExcerpt(entry, resolution: resolution) { text, source in
+            if let text {
+                Delivery.text(entry: entry, kind: "visible excerpt (Zed session)",
+                              source: source, content: text)
+            } else {
+                Delivery.notify("ContextStack",
+                                "No readable text view — capturing full window text instead")
+                AXTextCapture.captureWindowText(entry)
+            }
+        }
+    }
+
+    // ------------------------------------------- Zed session viewport
+
+    /// Zed exposes no text through AX, but its session db records the top
+    /// visible row per buffer. Slice the file (local read or SSH fetch)
+    /// from that row for one estimated viewport.
+    private static func zedSessionExcerpt(
+        _ entry: HistoryEntry, resolution: EntryResolution,
+        completion: @escaping (String?, String?) -> Void) {
+        guard entry.bundleID == "dev.zed.Zed",
+              let path = resolution.doc ?? resolution.remote?.exactPath else {
+            completion(nil, nil)
+            return
+        }
+        let topRow = RemoteFileCapture.zedScrollTopRow(forBufferPath: path) ?? 0
+        let lineCount = viewportLines(entry)
+
+        func deliverSlice(_ full: String) {
+            let lines = full.components(separatedBy: "\n")
+            let start = min(topRow, max(0, lines.count - 1))
+            let end = min(lines.count, start + lineCount)
+            completion(lines[start..<end].joined(separator: "\n"),
+                       "\(path)#L\(start + 1)-\(end)")
+        }
+
+        if FileManager.default.fileExists(atPath: path) {
+            let (text, _) = DocumentCapture.readTextFile(path)
+            if let text { deliverSlice(text) } else { completion(nil, nil) }
+        } else if let remote = resolution.remote {
+            RemoteFileCapture.retrieve(remote) { text, _, _ in
+                if let text { deliverSlice(text) } else { completion(nil, nil) }
+            }
+        } else {
+            completion(nil, nil)
+        }
+    }
+
+    /// Rough viewport height in text lines from the window frame.
+    private static func viewportLines(_ entry: HistoryEntry) -> Int {
+        guard let frame = AX.frame(entry.axWindow) else { return 40 }
+        return max(20, Int((frame.height - 100) / 17))
     }
 
     // ------------------------------------------------------------ plumbing
