@@ -17,6 +17,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+if let i = CommandLine.arguments.firstIndex(of: "--perf-test"),
+   CommandLine.arguments.count > i + 2 {
+    PerfTest.run(appQuery: CommandLine.arguments[i + 1],
+                 outPath: CommandLine.arguments[i + 2])
+}
 if let i = CommandLine.arguments.firstIndex(of: "--diag"),
    CommandLine.arguments.count > i + 2 {
     Diagnostics.run(appQuery: CommandLine.arguments[i + 1],

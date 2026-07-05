@@ -20,36 +20,38 @@ enum PickerFlow {
                             "No recent windows yet — switch between some apps first")
             return
         }
+        // Resolve every entry in the background now; by the time the user
+        // picks one, the expensive part is already done.
+        for e in entries { e.prewarmResolution() }
         let items = entries.enumerated().map { i, e in
             ChooserItem(
                 text: "\(e.appName) — \(e.title.isEmpty ? "(untitled)" : e.title)",
-                subText: "\(kindLabel(e)) · \(e.agoText)",
+                subText: "\(quickKind(e)) · \(e.agoText)",
                 image: e.appIcon,
                 index: i)
         }
         Chooser.shared.show(items: items, placeholder: "Recent windows…") { idx in
             guard let idx else { return }
-            let entry = entries[idx]
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                showActions(for: entry, targetBundleID: targetBundleID)
-            }
+            showActions(for: entries[idx], targetBundleID: targetBundleID)
         }
     }
 
-    private static func kindLabel(_ entry: HistoryEntry) -> String {
-        if BrowserCapture.family(of: entry) != nil { return "browser tab" }
-        if DocumentCapture.cheapDocumentPath(entry) != nil { return "document" }
-        if DocumentCapture.titleCandidate(entry.title) != nil { return "document" }
-        return "window"
+    /// Row label without blocking on AX: exact when the resolution cache is
+    /// warm, bundle-based otherwise (cosmetic only — the ranker uses the
+    /// full resolution at pick time).
+    private static func quickKind(_ entry: HistoryEntry) -> String {
+        if let cached = entry.cachedResolution() { return cached.kind }
+        return BrowserCapture.family(of: entry) != nil ? "browser tab" : "window"
     }
 
     private static func showActions(for entry: HistoryEntry, targetBundleID: String) {
+        let resolution = entry.resolution()
         let context = RankContext(targetBundleID: targetBundleID,
                                   sourceBundleID: entry.bundleID,
-                                  kind: kindLabel(entry),
+                                  kind: resolution.kind,
                                   titleTokens: ActionRanker.tokenize(entry.title),
                                   hourBucket: RankContext.hourBucket())
-        let actions = ranked(actionsFor(entry), context: context)
+        let actions = ranked(actionsFor(entry, resolution), context: context)
         let items = actions.enumerated().map { i, a in
             ChooserItem(text: a.text, subText: a.subText, image: nil, index: i)
         }
@@ -92,16 +94,21 @@ enum PickerFlow {
         return marked
     }
 
+    /// Entry point for --perf-test: the synchronous work between picking a
+    /// window and the action chooser appearing (uncached).
+    static func actionsForPerfTest(_ entry: HistoryEntry) -> Int {
+        actionsFor(entry, EntryResolution.compute(for: entry)).count
+    }
+
     /// Action list per entry type; this canonical order is the cold-start
     /// ranking before the learned model has data.
-    private static func actionsFor(_ entry: HistoryEntry) -> [Action] {
+    private static func actionsFor(_ entry: HistoryEntry,
+                                   _ resolution: EntryResolution) -> [Action] {
         var acts: [Action] = []
-        let isBrowser = BrowserCapture.family(of: entry) != nil
-        let doc = DocumentCapture.cheapDocumentPath(entry)
-        let remote = isBrowser ? nil
-            : RemoteFileCapture.candidate(for: entry, docPath: doc)
-        let candidate = (isBrowser || doc != nil || remote != nil)
-            ? nil : DocumentCapture.titleCandidate(entry.title)
+        let isBrowser = resolution.isBrowser
+        let doc = resolution.doc
+        let remote = resolution.remote
+        let candidate = resolution.titleCandidate
 
         if isBrowser {
             acts.append(Action(

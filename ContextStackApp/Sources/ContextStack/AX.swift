@@ -3,6 +3,17 @@ import ApplicationServices
 
 /// Thin helpers over the C Accessibility API.
 enum AX {
+    /// Cap for AX IPC into other processes. The system default is 6 seconds
+    /// per call — one busy Electron app would freeze the picker for that
+    /// long. Snappiness beats completeness here.
+    static let messagingTimeout: Float = 0.2
+
+    /// App element with the bounded messaging timeout applied.
+    static func application(_ pid: pid_t) -> AXUIElement {
+        let el = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(el, messagingTimeout)
+        return el
+    }
     static func string(_ el: AXUIElement, _ attr: String) -> String? {
         var v: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success,
@@ -52,7 +63,7 @@ enum AX {
     /// Focused window of the frontmost application, if readable.
     static func frontmostFocusedWindow() -> AXUIElement? {
         guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
-        let appEl = AXUIElementCreateApplication(front.processIdentifier)
-        return element(appEl, kAXFocusedWindowAttribute as String)
+        return element(application(front.processIdentifier),
+                       kAXFocusedWindowAttribute as String)
     }
 }

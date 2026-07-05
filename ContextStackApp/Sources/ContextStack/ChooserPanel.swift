@@ -51,8 +51,12 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
     private func finish(with index: Int?) {
         guard let cb = onPick else { return }
         onPick = nil
-        panel.orderOut(nil)
         cb(index)
+        // A chained show() inside the callback re-arms onPick — keep the
+        // panel up so the stage switch is seamless (no hide/show blink).
+        if onPick == nil {
+            panel.orderOut(nil)
+        }
     }
 
     // ------------------------------------------------------------- UI setup

@@ -55,7 +55,7 @@ enum DocumentCapture {
     }
 
     private static func focusedElementDocument(_ entry: HistoryEntry) -> String? {
-        let appEl = AXUIElementCreateApplication(entry.pid)
+        let appEl = AX.application(entry.pid)
         guard let focused = AX.element(appEl, kAXFocusedUIElementAttribute as String)
         else { return nil }
         // Only trust the focused element if it lives in the picked window.

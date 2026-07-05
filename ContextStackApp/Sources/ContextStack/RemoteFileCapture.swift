@@ -325,27 +325,42 @@ enum RemoteFileCapture {
         return (project, filename)
     }
 
-    static func jetbrainsCandidate(title: String) -> Candidate? {
-        guard let parsed = parseJetBrainsTitle(title), let filename = parsed.filename,
-              let support = FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask).first
-        else { return nil }
-        let root = support.appendingPathComponent("JetBrains")
-        guard let products = try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil) else { return nil }
+    /// The options-XML scan walks every JetBrains product dir — cache it,
+    /// the title parse alone shouldn't trigger disk walks on every pick.
+    private static var jetbrainsScanCache:
+        (projects: [(connection: Connection, path: String)], at: Date)?
 
+    private static func jetbrainsProjects() -> [(connection: Connection, path: String)] {
+        if let cached = jetbrainsScanCache,
+           Date().timeIntervalSince(cached.at) < 60 {
+            return cached.projects
+        }
         var projects: [(connection: Connection, path: String)] = []
-        for product in products {
-            let options = product.appendingPathComponent("options")
-            guard let xmls = try? FileManager.default.contentsOfDirectory(
-                at: options, includingPropertiesForKeys: nil) else { continue }
-            for xml in xmls where xml.pathExtension == "xml" {
-                if let content = try? String(contentsOf: xml, encoding: .utf8),
-                   content.contains("ssh://") {
-                    projects.append(contentsOf: jetbrainsSSHProjects(fromXML: content))
+        if let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask).first,
+           let products = try? FileManager.default.contentsOfDirectory(
+            at: support.appendingPathComponent("JetBrains"),
+            includingPropertiesForKeys: nil) {
+            for product in products {
+                let options = product.appendingPathComponent("options")
+                guard let xmls = try? FileManager.default.contentsOfDirectory(
+                    at: options, includingPropertiesForKeys: nil) else { continue }
+                for xml in xmls where xml.pathExtension == "xml" {
+                    if let content = try? String(contentsOf: xml, encoding: .utf8),
+                       content.contains("ssh://") {
+                        projects.append(contentsOf: jetbrainsSSHProjects(fromXML: content))
+                    }
                 }
             }
         }
+        jetbrainsScanCache = (projects, Date())
+        return projects
+    }
+
+    static func jetbrainsCandidate(title: String) -> Candidate? {
+        guard let parsed = parseJetBrainsTitle(title), let filename = parsed.filename
+        else { return nil }
+        let projects = jetbrainsProjects()
         guard !projects.isEmpty else { return nil }
         let named = projects.filter {
             ($0.path as NSString).lastPathComponent == parsed.project

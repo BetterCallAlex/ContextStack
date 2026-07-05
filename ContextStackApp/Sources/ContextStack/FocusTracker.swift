@@ -40,7 +40,7 @@ final class FocusTracker {
     }
 
     private func noteFocusedWindow(of app: NSRunningApplication) {
-        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        let appEl = AX.application(app.processIdentifier)
         guard let win = AX.element(appEl, kAXFocusedWindowAttribute as String) else { return }
         record(windowElement: win)
     }
@@ -56,7 +56,7 @@ final class FocusTracker {
             tracker.record(windowElement: element)
         }
         guard AXObserverCreate(pid, cb, &observer) == .success, let observer else { return }
-        let appEl = AXUIElementCreateApplication(pid)
+        let appEl = AX.application(pid)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         AXObserverAddNotification(observer, appEl,
                                   kAXFocusedWindowChangedNotification as CFString, refcon)
@@ -69,6 +69,7 @@ final class FocusTracker {
     fileprivate func record(windowElement win: AXUIElement) {
         guard let pid = AX.pid(win), pid != ProcessInfo.processInfo.processIdentifier
         else { return }
+        AXUIElementSetMessagingTimeout(win, AX.messagingTimeout)
         guard AX.string(win, kAXRoleAttribute as String) == (kAXWindowRole as String)
         else { return }
         if let subrole = AX.string(win, kAXSubroleAttribute as String),

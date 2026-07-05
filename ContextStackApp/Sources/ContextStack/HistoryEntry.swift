@@ -41,4 +41,72 @@ final class HistoryEntry {
         if d < 3600 { return "\(d / 60)m ago" }
         return "\(d / 3600)h ago"
     }
+
+    // --------------------------------------------------- entry resolution
+
+    private static let resolveQueue = DispatchQueue(
+        label: "cloud.alexrank.ContextStack.resolve", qos: .userInitiated)
+    private static let resolutionTTL: TimeInterval = 20
+    private var resolutionCache: (value: EntryResolution, at: Date)?
+    private var prewarming = false
+
+    func cachedResolution() -> EntryResolution? {
+        guard let c = resolutionCache,
+              Date().timeIntervalSince(c.at) < Self.resolutionTTL else { return nil }
+        return c.value
+    }
+
+    /// Resolve synchronously (main thread), served from the cache when the
+    /// prewarm already did the work.
+    func resolution() -> EntryResolution {
+        if let cached = cachedResolution() { return cached }
+        let r = EntryResolution.compute(for: self)
+        resolutionCache = (r, Date())
+        return r
+    }
+
+    /// Kick resolution onto a background queue at picker-open time so the
+    /// result is ready by the time the user picks this entry. AX calls are
+    /// bounded by AX.messagingTimeout, so even a stalled source app can't
+    /// freeze anything for long.
+    func prewarmResolution() {
+        guard cachedResolution() == nil, !prewarming else { return }
+        prewarming = true
+        Self.resolveQueue.async { [weak self] in
+            guard let self else { return }
+            let r = EntryResolution.compute(for: self)
+            DispatchQueue.main.async {
+                self.resolutionCache = (r, Date())
+                self.prewarming = false
+            }
+        }
+    }
+}
+
+/// Everything the action chooser needs to know about an entry, computed in
+/// one pass (browser check short-circuits all AX/db work).
+struct EntryResolution {
+    let isBrowser: Bool
+    let doc: String?
+    let remote: RemoteFileCapture.Candidate?
+    let titleCandidate: DocumentCapture.TitleCandidate?
+
+    var kind: String {
+        if isBrowser { return "browser tab" }
+        if doc != nil || remote != nil || titleCandidate != nil { return "document" }
+        return "window"
+    }
+
+    static func compute(for entry: HistoryEntry) -> EntryResolution {
+        if BrowserCapture.family(of: entry) != nil {
+            return EntryResolution(isBrowser: true, doc: nil, remote: nil,
+                                   titleCandidate: nil)
+        }
+        let doc = DocumentCapture.cheapDocumentPath(entry)
+        let remote = RemoteFileCapture.candidate(for: entry, docPath: doc)
+        let titleCandidate = (doc != nil || remote != nil)
+            ? nil : DocumentCapture.titleCandidate(entry.title)
+        return EntryResolution(isBrowser: false, doc: doc, remote: remote,
+                               titleCandidate: titleCandidate)
+    }
 }
