@@ -40,9 +40,12 @@ with a source header, so Claude Code can read it by path.
 The action list reorders itself around your habits: a tiny on-device model
 (online softmax over context features) learns which capture you pick per
 paste target, per app, and per project or site — one Zed project can settle
-on `@-reference` while another prefers screenshots. Better prediction, less
-selecting. The event log and model never leave your machine; toggle *Smart
-action ranking* in the menu-bar menu, delete one file to forget everything.
+on `@-reference` while another prefers screenshots. It also rides your
+bursts: what you just pasted feeds the next prediction, so five screenshots
+in a row means the sixth is already on top, and recent habits outweigh old
+ones. Better prediction, less selecting. The event log and model never leave
+your machine; toggle *Smart action ranking* in the menu-bar menu, delete one
+file to forget everything.
 
 ## Privacy, by construction
 

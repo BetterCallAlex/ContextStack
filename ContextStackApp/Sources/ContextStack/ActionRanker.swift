@@ -44,15 +44,30 @@ struct RankContext {
 /// Unseen contexts back off to whatever coarser features have learned —
 /// cold start degrades smoothly to the app-level and global answer.
 ///
+/// Beyond the static context, the model sees *sequence* features — what was
+/// just captured: the previous action within a 30-minute session (pastes
+/// cluster in bursts), the previous action for the same source app within a
+/// longer window, and the bigram of previous action × current entry kind.
+/// The sequence state is reconstructed from event order during replay and
+/// tracked live afterwards — no log schema change.
+///
 /// The append-only event log is the source of truth; weights are a cache
 /// rebuilt by replaying the log at launch, so the feature set can change
-/// between versions without losing data.
+/// between versions without losing data. Replay is recency-weighted
+/// (30-day half-life, floored) so old habits fade as new ones form.
 final class ActionRanker {
     static let shared = ActionRanker(eventsURL: defaultEventsURL())
 
     private static let dims = 4096
     private static let learningRate: Float = 0.15
     private static let maxReplayEvents = 5000
+    /// "Session" window for the global previous-action feature.
+    private static let sessionGap: TimeInterval = 30 * 60
+    /// Window for the per-source previous-action feature.
+    private static let sourceGap: TimeInterval = 6 * 3600
+    /// Recency weighting of replayed events.
+    private static let replayHalfLife: TimeInterval = 30 * 24 * 3600
+    private static let replayWeightFloor: Float = 0.25
     private static let classIndex: [ActionID: Int] = Dictionary(
         uniqueKeysWithValues: ActionID.allCases.enumerated().map { ($1, $0) })
 
@@ -61,6 +76,8 @@ final class ActionRanker {
                                   count: ActionID.allCases.count * dims)
     private(set) var eventCount = 0
     private var sourceCounts: [String: Int] = [:]
+    private var lastGlobal: (action: ActionID, time: Date)?
+    private var lastPerSource: [String: (action: ActionID, time: Date)] = [:]
     private let eventsURL: URL?
 
     struct Event: Codable {
@@ -142,6 +159,25 @@ final class ActionRanker {
         return names.map(hashIndex)
     }
 
+    /// Sequence features from the tracked previous-pick state.
+    private func sequenceFeatures(_ c: RankContext, at time: Date) -> [Int] {
+        var names: [String] = []
+        if let g = lastGlobal, time.timeIntervalSince(g.time) < Self.sessionGap,
+           time >= g.time {
+            names.append("prevG:\(g.action.rawValue)")
+            names.append("prevG+kind:\(g.action.rawValue)|\(c.kind)")
+        }
+        if let s = lastPerSource[c.sourceBundleID],
+           time.timeIntervalSince(s.time) < Self.sourceGap, time >= s.time {
+            names.append("prevSrc:\(s.action.rawValue)|\(c.sourceBundleID)")
+        }
+        return names.map(Self.hashIndex)
+    }
+
+    private func activeFeatures(_ c: RankContext, at time: Date) -> [Int] {
+        Self.features(c) + sequenceFeatures(c, at: time)
+    }
+
     // ---------------------------------------------------------------- model
 
     private func score(class c: Int, features: [Int]) -> Float {
@@ -152,9 +188,9 @@ final class ActionRanker {
     }
 
     /// Softmax over the presented actions only.
-    func probabilities(context: RankContext,
-                       presented: [ActionID]) -> [ActionID: Float] {
-        let feats = Self.features(context)
+    func probabilities(context: RankContext, presented: [ActionID],
+                       at time: Date = Date()) -> [ActionID: Float] {
+        let feats = activeFeatures(context, at: time)
         let raw = presented.map { score(class: Self.classIndex[$0]!, features: feats) }
         let maxRaw = raw.max() ?? 0
         let exps = raw.map { expf($0 - maxRaw) }
@@ -164,19 +200,23 @@ final class ActionRanker {
         return out
     }
 
-    /// One SGD step of masked-softmax cross-entropy.
-    private func train(context: RankContext, presented: [ActionID], chosen: ActionID) {
+    /// One SGD step of masked-softmax cross-entropy, then advance the
+    /// sequence state (the pick becomes the next event's "previous").
+    private func train(context: RankContext, presented: [ActionID],
+                       chosen: ActionID, at time: Date, weight: Float) {
         guard presented.contains(chosen) else { return }
-        let feats = Self.features(context)
-        let probs = probabilities(context: context, presented: presented)
+        let feats = activeFeatures(context, at: time)
+        let probs = probabilities(context: context, presented: presented, at: time)
         for a in presented {
             let gradient = probs[a]! - (a == chosen ? 1 : 0)
-            let step = Self.learningRate * gradient
+            let step = Self.learningRate * weight * gradient
             let base = Self.classIndex[a]! * Self.dims
             for f in feats { weights[base + f] -= step }
         }
         eventCount += 1
         sourceCounts[context.sourceBundleID, default: 0] += 1
+        lastGlobal = (chosen, time)
+        lastPerSource[context.sourceBundleID] = (chosen, time)
     }
 
     /// How many picks the model has seen from this source app.
@@ -199,7 +239,8 @@ final class ActionRanker {
                           presented: presented.map(\.rawValue),
                           chosen: chosen.rawValue)
         appendToLog(event)
-        train(context: context, presented: presented, chosen: chosen)
+        train(context: context, presented: presented, chosen: chosen,
+              at: Date(), weight: 1)
     }
 
     private func appendToLog(_ event: Event) {
@@ -218,6 +259,7 @@ final class ActionRanker {
               let raw = try? String(contentsOf: eventsURL, encoding: .utf8)
         else { return }
         let decoder = JSONDecoder()
+        let now = Date().timeIntervalSince1970
         let lines = raw.split(separator: "\n").suffix(Self.maxReplayEvents)
         for line in lines {
             guard let event = try? decoder.decode(Event.self, from: Data(line.utf8)),
@@ -228,7 +270,11 @@ final class ActionRanker {
                                       titleTokens: event.tokens,
                                       hourBucket: event.hour)
             let presented = event.presented.compactMap(ActionID.init(rawValue:))
-            train(context: context, presented: presented, chosen: chosen)
+            let age = max(0, now - event.ts)
+            let weight = max(Self.replayWeightFloor,
+                             exp2f(Float(-age / Self.replayHalfLife)))
+            train(context: context, presented: presented, chosen: chosen,
+                  at: Date(timeIntervalSince1970: event.ts), weight: weight)
         }
         if eventCount > 0 {
             csLog("ranker replayed \(eventCount) events")

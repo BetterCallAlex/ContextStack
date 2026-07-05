@@ -86,6 +86,40 @@ enum RankerSelfTest {
                          probs[top] ?? 0))
         }
 
+        // Stickiness: identical context, but the preferred action flips in
+        // blocks (debugging burst vs. wiring burst). Static features see the
+        // same context both ways — only the previous-action sequence
+        // features can predict block continuation.
+        let burstRanker = ActionRanker(eventsURL: nil)
+        let burstCtx = RankContext(targetBundleID: claude, sourceBundleID: zed,
+                                   kind: "document",
+                                   titleTokens: ["projecta", "main", "rs"],
+                                   hourBucket: 2)
+        var burstCorrect = 0
+        var burstTotal = 0
+        let blockChoices: [ActionID] = [.atReference, .screenshotClipboard]
+        for block in 0..<12 {
+            let chosen = blockChoices[block % 2]
+            for position in 0..<6 {
+                let probs = burstRanker.probabilities(context: burstCtx,
+                                                      presented: documentActions)
+                let predicted = documentActions.max {
+                    (probs[$0] ?? 0) < (probs[$1] ?? 0)
+                }!
+                // Score only continuation picks (not the unknowable block
+                // flip) once warmed up.
+                if block >= 4, position >= 1 {
+                    burstTotal += 1
+                    if predicted == chosen { burstCorrect += 1 }
+                }
+                burstRanker.record(context: burstCtx,
+                                   presented: documentActions, chosen: chosen)
+            }
+        }
+        let burstAccuracy = Double(burstCorrect) / Double(burstTotal)
+        print(String(format: "burst continuation accuracy (identical context): %.1f%%",
+                     burstAccuracy * 100))
+
         // Cold start: an unseen Zed project should back off to Zed-level
         // knowledge, not to noise.
         let fresh = RankContext(targetBundleID: claude, sourceBundleID: zed,
@@ -98,7 +132,7 @@ enum RankerSelfTest {
         print("cold-start unseen Zed project → \(top.rawValue) "
               + (plausible.contains(top) ? "(app-level backoff ok)" : "(UNEXPECTED)"))
 
-        let pass = accuracy >= 0.9 && plausible.contains(top)
+        let pass = accuracy >= 0.9 && burstAccuracy >= 0.75 && plausible.contains(top)
         print(pass ? "PASS" : "FAIL")
         exit(pass ? 0 : 1)
     }

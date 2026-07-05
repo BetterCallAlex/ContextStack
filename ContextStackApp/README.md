@@ -95,6 +95,14 @@ global → per-app → per-project hierarchy is encoded in the features (bias,
 app IDs, target×source crosses, source×title-token crosses), so unseen
 contexts back off smoothly to app-level and global trends.
 
+On top of the static context, the model sees **sequence features**: the
+previous pick within a 30-minute session, the previous pick for the same
+source app, and previous-pick × entry-kind bigrams — pastes cluster in
+bursts, and the model rides the burst (in the selftest, block continuation
+in an *identical* context scores ~80% where a static model coin-flips).
+Replay is recency-weighted (30-day half-life), so old habits fade as new
+ones form.
+
 Every pick is appended to
 `~/Library/Application Support/ContextStack/action-events.jsonl`; the weights
 are rebuilt from that log at each launch (the log is the source of truth, the
