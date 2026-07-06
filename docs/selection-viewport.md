@@ -32,6 +32,15 @@ character-precise and free).
   no dead menu rows.
 - Fallback chain: AX → Zed session → window-text walk → beeping failure.
 
+**Relevant excerpt** ([[SalienceModel.swift]], `.relevantExcerpt` action on
+file-backed entries incl. SSH): model-picked slice instead of viewport.
+Chunk scoring = error/TODO heuristics (+3/+1) + git working-tree changed
+lines (+4) + session-topic cosine (×5, contentLearning opt-in) + positional
+tiebreak; budget-capped, original order, `[lines a–b of n]` labels, `⋯`
+gaps. Budget adapts: full-recapture within 60 s of an excerpt → ×1.3
+(too narrow); accepted excerpts decay ×0.98 toward focus (floor 30,
+ceiling 200).
+
 **Gotchas:**
 > [!warning] AX ranges count UTF-16 units, Swift counts graphemes — the
 > non-parameterized fallback substring can drift on emoji-heavy text.
@@ -40,6 +49,7 @@ character-precise and free).
 **Links:** [[remote-ssh]], [[delivery]], [[action-ranking]]
 
 ## Changelog
+- 2026-07-07 — Relevant excerpt: salience-scored slices + adaptive budget (13-check selftest).
 - 2026-07-06 — Zed session-db excerpt + gating + audible failures (a744b63);
   initial actions (5bcc18a). Verified live: Terminal excerpt = exact on-screen
   buffer; Zed scroll row reads correctly.

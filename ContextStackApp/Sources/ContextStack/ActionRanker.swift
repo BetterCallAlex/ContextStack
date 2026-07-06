@@ -10,6 +10,7 @@ enum ActionID: String, CaseIterable, Codable {
     // the weight matrix, so existing learned weights must keep their slots.
     case selectedText, visibleExcerpt
     case screenshotOCR
+    case relevantExcerpt
 }
 
 /// Everything the ranker is allowed to know about one picker invocation.

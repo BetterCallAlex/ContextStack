@@ -71,6 +71,7 @@ enum CLIModes {
             exit(0)
         }
         if args.contains("--topic-test") { topicTest() }
+        if args.contains("--salience-test") { salienceTest() }
         if args.contains("--eval-log") { evalLog() }
         if let app1 = value(after: "--stack-test"),
            let app2 = value(after: "--stack-test", offset: 2),
@@ -111,6 +112,77 @@ enum CLIModes {
     }
 
     // ------------------------------------------------------------- modes
+
+    /// Salience scoring fixtures: chunking, heuristics, git boost, budget,
+    /// labels and the adaptive-budget feedback loop.
+    private static func salienceTest() -> Never {
+        let c = Checker()
+        let noise = (1...30).map { "filler line \($0) with nothing special" }
+            .joined(separator: "\n")
+        let text = """
+        intro line one
+        intro line two
+
+        \(noise)
+
+        func compute() {
+            return broken
+        }
+        ERROR: Traceback (most recent call last)
+          ValueError: shapes do not align
+
+        more filler here
+        and more
+
+        // TODO: fix the alignment issue
+        """
+
+        let chunks = SalienceModel.chunks(of: text)
+        c.check("chunking splits on blank lines", chunks.count >= 5)
+        c.check("long block split at 20 lines",
+                chunks.allSatisfy { $0.endLine - $0.startLine < 20 })
+
+        c.check("error text outranks filler",
+                SalienceModel.heuristicScore("ERROR: Traceback follows")
+                > SalienceModel.heuristicScore("filler line"))
+        c.check("todo scores between",
+                SalienceModel.heuristicScore("// TODO: thing") > 0)
+
+        let excerpt = SalienceModel.relevantExcerpt(
+            from: text, budgetLines: 10, topic: nil, changed: [])
+        c.check("error chunk included", excerpt.contains("Traceback"))
+        c.check("filler excluded at tight budget", !excerpt.contains("filler line 15"))
+        c.check("line labels present", excerpt.contains("[lines "))
+        c.check("gap marker present", excerpt.contains("⋯"))
+
+        // Isolated git boost: uniform filler, one changed line deep inside.
+        let uniform = (1...60).map { "plain line \($0)" }.joined(separator: "\n\n")
+        let changedBoost = SalienceModel.relevantExcerpt(
+            from: uniform, budgetLines: 3, topic: nil, changed: [79]) // "plain line 40"
+        c.check("git-changed chunk wins at tiny budget",
+                changedBoost.contains("plain line 40"))
+
+        let plain = SalienceModel.relevantExcerpt(
+            from: "just one line", budgetLines: 10, topic: nil, changed: [])
+        c.check("no-signal file falls back to content", plain.contains("just one line"))
+
+        // Adaptive budget: widen on full-after-excerpt, tighten on accept.
+        UserDefaults.standard.removeObject(forKey: "excerptBudgetLines")
+        let start = SalienceModel.budgetLines
+        SalienceModel.noteExcerptDelivered(signature: "sig")
+        SalienceModel.noteFullCapture(signature: "sig")
+        let widened = SalienceModel.budgetLines
+        c.check("budget widens after full-recapture (\(start)→\(widened))",
+                widened > start)
+        SalienceModel.noteExcerptDelivered(signature: "sig2")
+        c.check("budget tightens on accepted excerpt",
+                SalienceModel.budgetLines < widened)
+        SalienceModel.noteFullCapture(signature: "other-sig")
+        c.check("unrelated full capture doesn't widen",
+                SalienceModel.budgetLines < widened)
+        UserDefaults.standard.removeObject(forKey: "excerptBudgetLines")
+        c.finish()
+    }
 
     /// Topic embedding sanity: availability, semantic separation, and the
     /// archive → topic vector → bucket path end to end.

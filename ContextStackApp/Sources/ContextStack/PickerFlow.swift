@@ -18,6 +18,7 @@ extension ActionID {
         case .selectedText: return "highlighter"
         case .visibleExcerpt: return "eye"
         case .screenshotOCR: return "doc.viewfinder"
+        case .relevantExcerpt: return "sparkles"
         }
     }
 
@@ -235,6 +236,11 @@ enum PickerFlow {
                 subText: "Remote file — fetched from \(remote.displayHost) via your SSH connection",
                 symbol: "network",
                 run: { deliverRemoteContents(remote, entry: entry) }))
+            acts.append(Action(
+                id: .relevantExcerpt,
+                text: "Relevant excerpt (over SSH)",
+                subText: "Fetch, then keep just the lines that matter",
+                run: { deliverRemoteExcerpt(remote, entry: entry) }))
             if let exact = remote.exactPath {
                 let short = exact
                 acts.append(Action(
@@ -283,6 +289,11 @@ enum PickerFlow {
                     text: "File contents",
                     subText: "Copy the document text itself (text formats only)",
                     run: { deliverContents(of: doc, entry: entry) }))
+                acts.append(Action(
+                    id: .relevantExcerpt,
+                    text: "Relevant excerpt",
+                    subText: "Just the lines that matter — errors, fresh edits, on-topic sections",
+                    run: { deliverRelevantExcerpt(of: doc, entry: entry) }))
             }
         } else if let candidate {
             // No AX document — locate the file named in the window title
@@ -394,6 +405,7 @@ enum PickerFlow {
     private static func deliverContents(of path: String, entry: HistoryEntry) {
         let (data, err) = DocumentCapture.readTextFile(path)
         if let data {
+            SalienceModel.noteFullCapture(signature: SalienceModel.signature(for: entry))
             Delivery.text(entry: entry, kind: "file contents",
                           source: path, content: data)
         } else {
@@ -407,6 +419,7 @@ enum PickerFlow {
                                               entry: HistoryEntry) {
         RemoteFileCapture.retrieve(remote) { text, path, err in
             if let text {
+                SalienceModel.noteFullCapture(signature: SalienceModel.signature(for: entry))
                 Delivery.text(entry: entry,
                               kind: "file contents (ssh \(remote.displayHost))",
                               source: "\(remote.displayHost):\(path ?? "?")",
@@ -418,6 +431,44 @@ enum PickerFlow {
                 if let exact = remote.exactPath { Delivery.setClipboard(exact) }
             }
         }
+    }
+
+    private static func deliverRelevantExcerpt(of path: String, entry: HistoryEntry) {
+        let (data, err) = DocumentCapture.readTextFile(path)
+        guard let data else {
+            Delivery.failure("ContextStack",
+                             "Cannot read contents: \(err ?? "?") — copied the path instead")
+            Delivery.setClipboard(path)
+            return
+        }
+        excerptAndDeliver(text: data, source: path, entry: entry, localPath: path)
+    }
+
+    private static func deliverRemoteExcerpt(_ remote: RemoteFileCapture.Candidate,
+                                             entry: HistoryEntry) {
+        RemoteFileCapture.retrieve(remote) { text, path, err in
+            guard let text else {
+                Delivery.failure("ContextStack", "SSH fetch failed: \(err ?? "?")")
+                return
+            }
+            excerptAndDeliver(text: text,
+                              source: "\(remote.displayHost):\(path ?? "?")",
+                              entry: entry, localPath: nil)
+        }
+    }
+
+    /// Salience selection + delivery; feedback bookkeeping for the adaptive
+    /// budget happens here.
+    private static func excerptAndDeliver(text: String, source: String,
+                                          entry: HistoryEntry, localPath: String?) {
+        let topic = TopicModel.topicVector()
+        let changed = localPath.map(SalienceModel.changedLines(path:)) ?? []
+        let excerpt = SalienceModel.relevantExcerpt(
+            from: text, budgetLines: SalienceModel.budgetLines,
+            topic: topic, changed: changed)
+        SalienceModel.noteExcerptDelivered(signature: SalienceModel.signature(for: entry))
+        Delivery.text(entry: entry, kind: "relevant excerpt",
+                      source: source, content: excerpt)
     }
 
     private static func notifyNotFound(_ candidate: DocumentCapture.TitleCandidate) {
