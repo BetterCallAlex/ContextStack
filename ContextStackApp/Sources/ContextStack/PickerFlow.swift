@@ -68,6 +68,11 @@ enum PickerFlow {
         // Resolve every entry in the background now; by the time the user
         // picks one, the expensive part is already done.
         for e in entries { e.prewarmResolution() }
+        if Config.contentLearning {
+            DispatchQueue.global(qos: .userInitiated).async {
+                TopicModel.refreshTopicVector()
+            }
+        }
 
         // Window prediction: recency ORDER is sacred (muscle memory), but the
         // preselection highlight moves to the learned pick — a selection in a
@@ -77,7 +82,8 @@ enum PickerFlow {
                 src: e.bundleID,
                 kind: quickKind(e),
                 sel: e.cachedResolution()?.selection != nil,
-                mcopy: ClipboardObserver.shared.recentlyCopied(from: e.bundleID))
+                mcopy: ClipboardObserver.shared.recentlyCopied(from: e.bundleID),
+                topic: TopicModel.bucket(candidateVector: e.candidateEmbedding))
         }
         let predicted = WindowRanker.shared.predictedIndex(
             target: targetBundleID, entries: windowFeatures) ?? 0

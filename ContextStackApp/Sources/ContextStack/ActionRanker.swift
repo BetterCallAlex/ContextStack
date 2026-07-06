@@ -86,6 +86,13 @@ final class ActionRanker {
     private var sourceCounts: [String: Int] = [:]
     private var lastGlobal: (action: ActionID, time: Date)?
     private var lastPerSource: [String: (action: ActionID, time: Date)] = [:]
+    /// For correction detection: the previous pick in full.
+    private var lastPick: (context: RankContext, presented: [ActionID],
+                           chosen: ActionID, time: Date)?
+    /// Re-picking the same window within this window with a different action
+    /// means the first pick was a mistake — relabel it.
+    private static let correctionGap: TimeInterval = 30
+    private static let correctionWeight: Float = 0.7
     private let eventsURL: URL?
 
     struct Event: Codable {
@@ -232,6 +239,30 @@ final class ActionRanker {
         sourceCounts[context.sourceBundleID, default: 0] += 1
         lastGlobal = (chosen, time)
         lastPerSource[context.sourceBundleID] = (chosen, time)
+
+        // Correction: same window, seconds later, different action — the
+        // previous pick was wrong. Relabel it with the corrected action
+        // (reduced weight; derived purely from event order, so replay
+        // applies the same corrections with no schema change).
+        if let prev = lastPick,
+           time.timeIntervalSince(prev.time) < Self.correctionGap,
+           prev.context.sourceBundleID == context.sourceBundleID,
+           prev.context.targetBundleID == context.targetBundleID,
+           prev.context.titleTokens == context.titleTokens,
+           prev.context.hasSelection == context.hasSelection,
+           prev.chosen != chosen,
+           prev.presented.contains(chosen) {
+            let feats = activeFeatures(prev.context, at: prev.time)
+            let probs = probabilities(context: prev.context,
+                                      presented: prev.presented, at: prev.time)
+            for a in prev.presented {
+                let gradient = probs[a]! - (a == chosen ? 1 : 0)
+                let step = Self.learningRate * Self.correctionWeight * gradient
+                let base = Self.classIndex[a]! * Self.dims
+                for f in feats { weights[base + f] -= step }
+            }
+        }
+        lastPick = (context, presented, chosen, time)
     }
 
     /// How many picks the model has seen from this source app.
@@ -240,6 +271,14 @@ final class ActionRanker {
     }
 
     // ------------------------------------------------------------ recording
+
+    /// Train without logging, with a controllable clock — offline evaluation
+    /// (--eval-log) and timing-sensitive selftests.
+    func recordForEvaluation(context: RankContext, presented: [ActionID],
+                             chosen: ActionID, at time: Date) {
+        train(context: context, presented: presented, chosen: chosen,
+              at: time, weight: 1)
+    }
 
     /// Log the user's pick and update the model. Called for every completed
     /// capture, whether or not smart ranking is currently enabled.

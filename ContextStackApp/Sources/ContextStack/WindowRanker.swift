@@ -18,6 +18,9 @@ final class WindowRanker {
         /// User manually copied from this app recently (clipboard observer,
         /// opt-in). Optional so older logs replay unchanged.
         var mcopy: Bool? = nil
+        /// Session-topic similarity bucket ("high"/"mid"/"low"), content
+        /// learning opt-in. Optional for old-log compatibility.
+        var topic: String? = nil
     }
 
     private struct Event: Codable {
@@ -83,6 +86,10 @@ final class WindowRanker {
         if entry.mcopy == true {
             names.append("mcopy:1")
             names.append("mcopy+src:\(entry.src)")
+        }
+        if let topic = entry.topic {
+            names.append("topic:\(topic)")
+            names.append("topic+tgt:\(topic)|\(target)")
         }
         return names.map(hashIndex)
     }

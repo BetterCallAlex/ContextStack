@@ -197,8 +197,43 @@ enum RankerSelfTest {
         print("window-ranker holds back before 20 events: "
               + (earlyPrediction == nil ? "ok" : "UNEXPECTED"))
 
+        // Corrections: picking A then immediately re-picking B on the same
+        // window relabels A→B. Two rankers see identical pick sequences; only
+        // the timing differs (10 s apart = corrections fire, 60 s = not).
+        // The corrected ranker must end up more convinced of B.
+        func runCorrections(pairGap: TimeInterval) -> Float {
+            let r = ActionRanker(eventsURL: nil)
+            let ctx = RankContext(targetBundleID: claude, sourceBundleID: zed,
+                                  kind: "document",
+                                  titleTokens: ["projecta", "main", "rs"],
+                                  hourBucket: 2, hasSelection: false)
+            var t = Date(timeIntervalSince1970: 1_800_000_000)
+            for _ in 0..<5 {
+                r.recordForEvaluation(context: ctx, presented: documentActions,
+                                      chosen: .atReference, at: t)
+                t.addTimeInterval(3600)
+            }
+            for _ in 0..<3 {
+                r.recordForEvaluation(context: ctx, presented: documentActions,
+                                      chosen: .atReference, at: t)
+                t.addTimeInterval(pairGap)
+                r.recordForEvaluation(context: ctx, presented: documentActions,
+                                      chosen: .screenshotClipboard, at: t)
+                t.addTimeInterval(3600)
+            }
+            let probs = r.probabilities(context: ctx, presented: documentActions,
+                                        at: t.addingTimeInterval(3600))
+            return probs[.screenshotClipboard] ?? 0
+        }
+        let corrected = runCorrections(pairGap: 10)
+        let uncorrected = runCorrections(pairGap: 60)
+        print(String(format: "correction relabel: p(B) %.3f corrected vs %.3f uncorrected",
+                     corrected, uncorrected))
+        let correctionOK = corrected > uncorrected
+
         let pass = accuracy >= 0.9 && burstAccuracy >= 0.75 && plausible.contains(top)
             && selAccuracy >= 0.8 && winAccuracy >= 0.8 && earlyPrediction == nil
+            && correctionOK
         print(pass ? "PASS" : "FAIL")
         exit(pass ? 0 : 1)
     }

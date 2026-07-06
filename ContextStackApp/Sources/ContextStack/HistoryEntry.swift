@@ -58,6 +58,11 @@ final class HistoryEntry {
     /// makes an entry capturable after the tab (or browser) is gone.
     var knownTab: (url: String, title: String, at: Date)?
 
+    /// Embedding of the entry's cheap text (title + selection snapshot +
+    /// known tab title) for topic matching; computed at prewarm when
+    /// content learning is on.
+    var candidateEmbedding: [Double]?
+
     func cachedResolution() -> EntryResolution? {
         guard let c = resolutionCache,
               Date().timeIntervalSince(c.at) < Self.resolutionTTL else { return nil }
@@ -83,8 +88,19 @@ final class HistoryEntry {
         Self.resolveQueue.async { [weak self] in
             guard let self else { return }
             let r = EntryResolution.compute(for: self)
+            let embedding: [Double]?
+            if Config.contentLearning {
+                let text = [self.title,
+                            r.selection.map { String($0.prefix(200)) },
+                            self.knownTab?.title]
+                    .compactMap { $0 }.joined(separator: " ")
+                embedding = TopicModel.vector(for: text)
+            } else {
+                embedding = nil
+            }
             DispatchQueue.main.async {
                 self.resolutionCache = (r, Date())
+                self.candidateEmbedding = embedding
                 self.prewarming = false
             }
         }

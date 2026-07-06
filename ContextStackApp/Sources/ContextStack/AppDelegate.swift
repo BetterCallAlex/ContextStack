@@ -73,6 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clipboard.target = self
         menu.addItem(clipboard)
 
+        let content = NSMenuItem(title: "Topic matching from capture content",
+                                 action: #selector(toggleContentLearning),
+                                 keyEquivalent: "")
+        content.state = Config.contentLearning ? .on : .off
+        content.target = self
+        menu.addItem(content)
+
         recentItems = CaptureArchive.recent()
         let recentMenu = NSMenu()
         if recentItems.isEmpty {
@@ -127,6 +134,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleSmartRanking() {
         Config.smartRanking.toggle()
+    }
+
+    @objc private func toggleContentLearning() {
+        Config.contentLearning.toggle()
     }
 
     @objc private func toggleClipboardObserver() {

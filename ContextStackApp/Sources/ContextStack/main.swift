@@ -17,6 +17,106 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Topic embedding sanity: --topic-test
+if CommandLine.arguments.contains("--topic-test") {
+    var failures = 0
+    func check(_ name: String, _ ok: Bool) {
+        if !ok { failures += 1 }
+        print("  \(ok ? "ok " : "MISS") \(name)")
+    }
+    let wasOn = Config.contentLearning
+    Config.contentLearning = true
+    defer { Config.contentLearning = wasOn }
+    check("NLEmbedding available", TopicModel.available)
+    guard TopicModel.available else { print("FAIL"); exit(1) }
+
+    let v1 = TopicModel.vector(for: "python dataframe pandas notebook bot detection analysis")
+    let v2 = TopicModel.vector(for: "polars dataframe python code for the detection notebook")
+    let v3 = TopicModel.vector(for: "football bundesliga match results and league table")
+    check("vectors computed", v1 != nil && v2 != nil && v3 != nil)
+    if let v1, let v2, let v3 {
+        let near = TopicModel.cosine(v1, v2)
+        let far = TopicModel.cosine(v1, v3)
+        print(String(format: "  cos(related)=%.3f cos(unrelated)=%.3f", near, far))
+        check("related closer than unrelated", near > far)
+    }
+
+    // Topic vector from a synthetic archive + bucketing end to end.
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("cs-topic-test-\(ProcessInfo.processInfo.processIdentifier)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    for i in 0..<3 {
+        let content = "# Context: Zed — notebook\nSource: x\nCaptured: now\n\n"
+            + "import polars as pl  # bot detection dataframe pipeline \(i)"
+        try? content.write(to: dir.appendingPathComponent("2026070\(i)-file\(i).md"),
+                           atomically: true, encoding: .utf8)
+    }
+    TopicModel.refreshTopicVector(dir: dir.path)
+    let deadline = Date().addingTimeInterval(5)
+    while Date() < deadline, TopicModel.topicVector() == nil {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1))
+    }
+    check("topic vector built from archive", TopicModel.topicVector() != nil)
+    let onTopic = TopicModel.bucket(candidateVector:
+        TopicModel.vector(for: "python polars dataframe detection code"))
+    let offTopic = TopicModel.bucket(candidateVector:
+        TopicModel.vector(for: "football bundesliga results"))
+    print("  buckets: onTopic=\(onTopic ?? "nil") offTopic=\(offTopic ?? "nil")")
+    check("on-topic bucket >= off-topic bucket",
+          (onTopic == "high" || onTopic == "mid")
+          && (offTopic == "low" || offTopic == "mid")
+          && onTopic != offTopic)
+    print(failures == 0 ? "PASS" : "FAIL (\(failures))")
+    exit(failures == 0 ? 0 : 1)
+}
+
+// Prequential evaluation of the REAL event logs: --eval-log
+// Reports top-1 accuracy of the action model over your actual pick history
+// (predict-then-train over the log, exactly like launch replay but scored).
+if CommandLine.arguments.contains("--eval-log") {
+    guard let base = FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask).first else { exit(1) }
+    let url = base.appendingPathComponent("ContextStack/action-events.jsonl")
+    guard let raw = try? String(contentsOf: url, encoding: .utf8) else {
+        print("no action-events.jsonl yet")
+        exit(1)
+    }
+    let ranker = ActionRanker(eventsURL: nil)
+    let decoder = JSONDecoder()
+    var total = 0, correct = 0
+    var last50: [Bool] = []
+    for line in raw.split(separator: "\n") {
+        guard let e = try? decoder.decode(ActionRanker.Event.self, from: Data(line.utf8)),
+              let chosen = ActionID(rawValue: e.chosen) else { continue }
+        let ctx = RankContext(targetBundleID: e.target, sourceBundleID: e.source,
+                              kind: e.kind, titleTokens: e.tokens, hourBucket: e.hour,
+                              hasSelection: e.sel ?? false)
+        let presented = e.presented.compactMap(ActionID.init(rawValue:))
+        guard presented.count > 1 else { continue }
+        let time = Date(timeIntervalSince1970: e.ts)
+        let probs = ranker.probabilities(context: ctx, presented: presented, at: time)
+        let predicted = presented.max { (probs[$0] ?? 0) < (probs[$1] ?? 0) }!
+        total += 1
+        let hit = predicted == chosen
+        if hit { correct += 1 }
+        last50.append(hit)
+        if last50.count > 50 { last50.removeFirst() }
+        ranker.recordForEvaluation(context: ctx, presented: presented,
+                                   chosen: chosen, at: time)
+    }
+    guard total > 0 else {
+        print("no scorable events (need >1 presented action)")
+        exit(1)
+    }
+    print("action model prequential top-1 on real log:")
+    print(String(format: "  overall: %.1f%% (%d/%d events)",
+                 Double(correct) / Double(total) * 100, correct, total))
+    print(String(format: "  last %d: %.1f%%", last50.count,
+                 Double(last50.filter { $0 }.count) / Double(last50.count) * 100))
+    exit(0)
+}
+
 // Multi-select stack through the production combiner:
 // --stack-test <app1> <app2> <out>   (run via open -n -W ... --args)
 if let i = CommandLine.arguments.firstIndex(of: "--stack-test"),

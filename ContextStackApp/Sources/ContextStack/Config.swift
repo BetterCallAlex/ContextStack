@@ -17,6 +17,7 @@ enum Config {
             "hotkey": "ctrl+alt+space",
             "archiveRetentionDays": 7,
             "observeClipboard": false,
+            "contentLearning": false,
         ])
     }
 
@@ -61,6 +62,13 @@ enum Config {
     static var observeClipboard: Bool {
         get { d.bool(forKey: "observeClipboard") }
         set { d.set(newValue, forKey: "observeClipboard") }
+    }
+
+    /// Opt-in: topic matching over the capture archive (content the user
+    /// already captured — the clipboard is never read for this).
+    static var contentLearning: Bool {
+        get { d.bool(forKey: "contentLearning") }
+        set { d.set(newValue, forKey: "contentLearning") }
     }
 
     /// Browsers that speak the Chrome AppleScript dictionary
