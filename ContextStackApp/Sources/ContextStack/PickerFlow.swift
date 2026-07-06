@@ -76,7 +76,8 @@ enum PickerFlow {
             WindowRanker.EntryFeatures(
                 src: e.bundleID,
                 kind: quickKind(e),
-                sel: e.cachedResolution()?.selection != nil)
+                sel: e.cachedResolution()?.selection != nil,
+                mcopy: ClipboardObserver.shared.recentlyCopied(from: e.bundleID))
         }
         let predicted = WindowRanker.shared.predictedIndex(
             target: targetBundleID, entries: windowFeatures) ?? 0

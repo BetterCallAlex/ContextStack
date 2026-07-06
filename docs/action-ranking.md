@@ -37,6 +37,12 @@ highlight (never the order — recency is muscle memory).
   crosses. Own log `window-events.jsonl`. Predicts only after ≥20 events and
   a real margin; otherwise highlight stays on most-recent. Predicted row gets
   `· likely` badge.
+- **Clipboard observer** ([[ClipboardObserver.swift]], opt-in, default OFF,
+  menu toggle): changeCount polling + listen-only Cmd+V tap. Metadata only —
+  apps, content shape (type/chars/lines/code/url/path flags) — content
+  inspected in memory, never stored. Own `clipboard-events.jsonl`. Feeds
+  `mcopy` features into the window ranker: recently-copied-from app =
+  likelier paste source. Self-writes filtered via changeCount marking.
 - Picks logged even when `smartRanking` off. No implicit negatives (explicitly
   deferred by Alex).
 - `· learned` badge on top row only when ≥5 samples for source app and top ≠
@@ -52,6 +58,7 @@ highlight (never the order — recency is muscle memory).
 **Links:** [[picker]], [[selection-viewport]]
 
 ## Changelog
+- 2026-07-06 — Opt-in clipboard metadata observer; mcopy window features.
 - 2026-07-06 — Selection as learned feature in both heads; new WindowRanker
   preselecting the picker highlight. Selftests: sel-flip 100%,
   window-ranker 100%, holds back <20 events.

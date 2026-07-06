@@ -15,6 +15,9 @@ final class WindowRanker {
         let src: String
         let kind: String
         let sel: Bool
+        /// User manually copied from this app recently (clipboard observer,
+        /// opt-in). Optional so older logs replay unchanged.
+        var mcopy: Bool? = nil
     }
 
     private struct Event: Codable {
@@ -76,6 +79,10 @@ final class WindowRanker {
             names.append("sel:1")
             names.append("sel+src:\(entry.src)")
             names.append("sel+tgt:\(target)")
+        }
+        if entry.mcopy == true {
+            names.append("mcopy:1")
+            names.append("mcopy+src:\(entry.src)")
         }
         return names.map(hashIndex)
     }

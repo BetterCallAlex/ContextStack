@@ -44,6 +44,7 @@ enum Delivery {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)
+        ClipboardObserver.shared.noteSelfWrite()
     }
 
     /// Deliver a text capture: clipboard + auto-paste immediately, archive

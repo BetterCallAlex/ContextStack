@@ -53,6 +53,7 @@ enum CaptureArchive {
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.writeObjects([image])
+            ClipboardObserver.shared.noteSelfWrite()
         } else {
             guard let text = try? String(contentsOf: item.url, encoding: .utf8) else {
                 Delivery.failure("ContextStack", "Could not read \(item.url.lastPathComponent)")

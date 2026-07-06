@@ -155,6 +155,7 @@ enum ScreenshotCapture {
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.writeObjects([nsImage])
+            ClipboardObserver.shared.noteSelfWrite()
             Delivery.maybeAutoPaste()
             DispatchQueue.global(qos: .utility).async {
                 let ok = writePNG(image, to: path)

@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Onboarding.show()
         }
 
+        if Config.observeClipboard { ClipboardObserver.shared.start() }
         CaptureArchive.cleanup()
         cleanupTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { _ in
             CaptureArchive.cleanup()
@@ -64,6 +65,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ranking.state = Config.smartRanking ? .on : .off
         ranking.target = self
         menu.addItem(ranking)
+
+        let clipboard = NSMenuItem(title: "Learn from manual copy/paste (metadata only)",
+                                   action: #selector(toggleClipboardObserver),
+                                   keyEquivalent: "")
+        clipboard.state = Config.observeClipboard ? .on : .off
+        clipboard.target = self
+        menu.addItem(clipboard)
 
         recentItems = CaptureArchive.recent()
         let recentMenu = NSMenu()
@@ -119,6 +127,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleSmartRanking() {
         Config.smartRanking.toggle()
+    }
+
+    @objc private func toggleClipboardObserver() {
+        Config.observeClipboard.toggle()
+        if Config.observeClipboard {
+            ClipboardObserver.shared.start()
+        } else {
+            ClipboardObserver.shared.stop()
+        }
     }
 
     @objc private func repasteRecent(_ sender: NSMenuItem) {

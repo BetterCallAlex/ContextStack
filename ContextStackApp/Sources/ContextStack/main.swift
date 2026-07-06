@@ -17,6 +17,52 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Clipboard observer shape detection: --clipboard-test
+// Saves and restores the user's clipboard around the synthetic copy.
+if CommandLine.arguments.contains("--clipboard-test") {
+    var failures = 0
+    func check(_ name: String, _ ok: Bool) {
+        if !ok { failures += 1 }
+        print("  \(ok ? "ok " : "MISS") \(name)")
+    }
+    let saved = NSPasteboard.general.string(forType: .string)
+    var events: [ClipboardObserver.Event] = []
+    ClipboardObserver.shared.eventSink = { events.append($0) }
+    ClipboardObserver.shared.start()
+    print("paste tap active: \(ClipboardObserver.shared.tapActive)")
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/pbcopy")
+    let pipe = Pipe()
+    proc.standardInput = pipe
+    try? proc.run()
+    pipe.fileHandleForWriting.write(Data("let x = f(y);\n{ code(); }".utf8))
+    try? pipe.fileHandleForWriting.close()
+    proc.waitUntilExit()
+
+    let deadline = Date().addingTimeInterval(4)
+    while Date() < deadline, events.isEmpty {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1))
+    }
+    check("copy event observed", !events.isEmpty)
+    if let e = events.first {
+        check("type string", e.type == "string")
+        check("two lines", e.lines == 2)
+        check("looks like code", e.code == true)
+        check("not a url", e.url == false)
+    }
+    // Our own restore write must be ignored.
+    let before = events.count
+    if let saved { Delivery.setClipboard(saved) } else { Delivery.setClipboard("") }
+    let deadline2 = Date().addingTimeInterval(1.5)
+    while Date() < deadline2 {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1))
+    }
+    check("self-write ignored", events.count == before)
+    print(failures == 0 ? "PASS" : "FAIL (\(failures))")
+    exit(failures == 0 ? 0 : 1)
+}
+
 // Focus-time tab prefetch machinery: --prefetch-test <browser-query> <out>
 if let i = CommandLine.arguments.firstIndex(of: "--prefetch-test"),
    CommandLine.arguments.count > i + 2 {

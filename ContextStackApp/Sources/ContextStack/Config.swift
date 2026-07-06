@@ -16,6 +16,7 @@ enum Config {
             "captureDir": NSHomeDirectory() + "/ContextStack",
             "hotkey": "ctrl+alt+space",
             "archiveRetentionDays": 7,
+            "observeClipboard": false,
         ])
     }
 
@@ -55,6 +56,12 @@ enum Config {
     /// Archived captures older than this are deleted (launch + daily).
     /// 0 = keep forever.
     static var archiveRetentionDays: Int { d.integer(forKey: "archiveRetentionDays") }
+
+    /// Opt-in: learn from manual Cmd+C/Cmd+V (metadata only, never content).
+    static var observeClipboard: Bool {
+        get { d.bool(forKey: "observeClipboard") }
+        set { d.set(newValue, forKey: "observeClipboard") }
+    }
 
     /// Browsers that speak the Chrome AppleScript dictionary
     /// (bundle ID → name to use in `tell application`).

@@ -104,6 +104,12 @@ in an *identical* context scores ~80% where a static model coin-flips).
 Replay is recency-weighted (30-day half-life), so old habits fade as new
 ones form.
 
+Optional extra signal: *Learn from manual copy/paste* (menu toggle, off by
+default) observes Cmd+C/Cmd+V **metadata only** — apps involved and content
+shape, never the content itself — so an app you just copied from ranks
+higher as a source. Events live in `clipboard-events.jsonl`; delete to
+forget, toggle off to stop.
+
 Every pick is appended to
 `~/Library/Application Support/ContextStack/action-events.jsonl`; the weights
 are rebuilt from that log at each launch (the log is the source of truth, the
