@@ -104,8 +104,15 @@ enum BrowserCapture {
             let title = parts.count > 1 ? parts[1] : ""
             DispatchQueue.main.async {
                 entry.cachedTab = (url, title, Date())
+                entry.knownTab = (url, title, Date())
             }
         }
+    }
+
+    /// Last known tab metadata, any age — the closed-tab fallback.
+    static func knownTab(_ entry: HistoryEntry) -> (url: String, title: String)? {
+        guard let k = entry.knownTab else { return nil }
+        return (k.url, k.title)
     }
 
     /// Run JavaScript in the remembered tab (needs "Allow JavaScript from
@@ -173,6 +180,7 @@ enum BrowserCapture {
         guard let (family, appName) = family(of: entry) else { return }
         let resolved = cachedTab(entry)
             ?? resolveTab(family: family, appName: appName, wantedTitle: entry.title)
+            ?? knownTab(entry)
         let url = resolved?.url
 
         // Preferred: run JS in the live tab — sees the rendered page,
@@ -225,7 +233,8 @@ enum BrowserCapture {
         guard let (family, appName) = family(of: entry) else { return }
         guard let (url, title) = cachedTab(entry)
                 ?? resolveTab(family: family, appName: appName,
-                              wantedTitle: entry.title) else {
+                              wantedTitle: entry.title)
+                ?? knownTab(entry) else {
             Delivery.failure("ContextStack", "Could not get a URL from \(appName)")
             return
         }

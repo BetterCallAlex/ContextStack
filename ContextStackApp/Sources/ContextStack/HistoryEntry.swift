@@ -54,6 +54,10 @@ final class HistoryEntry {
     /// in the background while the action chooser is open.
     var cachedTab: (url: String, title: String, at: Date)?
 
+    /// Tab metadata captured at focus time, kept without expiry: it's what
+    /// makes an entry capturable after the tab (or browser) is gone.
+    var knownTab: (url: String, title: String, at: Date)?
+
     func cachedResolution() -> EntryResolution? {
         guard let c = resolutionCache,
               Date().timeIntervalSince(c.at) < Self.resolutionTTL else { return nil }

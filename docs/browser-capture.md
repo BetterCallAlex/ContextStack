@@ -24,6 +24,14 @@ tabs via Apple Events.
   main-thread execution would jank the chooser. Cached 10 s on the entry.
   Content (JS) is never prefetched — consent boundary is the action pick.
 
+**Closed-tab survival:** tab URL+title also prefetched at *focus* time
+(debounced 0.6 s, only when the Automation grant already exists — never a
+surprise prompt) into `knownTab`, kept without expiry and carried across
+refocuses. Capture order: fresh prefetch → live AppleScript lookup →
+`knownTab`; with the browser quit, link + HTTP page fetch still work.
+Closed-tab-while-browser-runs still hits the script's active-tab fallback
+first (known limitation).
+
 **Shape:** bundle-ID → AppleScript-name maps in [[Config.swift]]
 (`chromiumBundles`, `safariBundles`); Safari dialect uses `name of tab` /
 `current tab`, Chromium `title of tab` / `active tab`.
@@ -36,5 +44,6 @@ tabs via Apple Events.
 **Links:** [[picker]], [[delivery]], [[permissions-signing]]
 
 ## Changelog
+- 2026-07-06 — Focus-time prefetch → entries survive closed tabs/quit browser.
 - 2026-07-06 — Initial note; state as of a744b63.
 - 2026-07-05 — Tab metadata prefetch at chooser open (359a7eb).

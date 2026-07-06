@@ -87,8 +87,27 @@ final class FocusTracker {
             bundleID: bundleID,
             title: AX.string(win, kAXTitleAttribute as String) ?? ""
         )
+        // Carry closed-tab survival metadata across refocuses of the same
+        // window (each focus event creates a fresh entry object).
+        if let previous = history.first(where: { $0.sameWindow(as: win) }) {
+            entry.knownTab = previous.knownTab
+        }
         history.removeAll { $0.sameWindow(as: win) }
         history.insert(entry, at: 0)
+
+        // Prefetch tab URL/title at focus time so browser entries survive
+        // closed tabs. Debounced past rapid alt-tabbing; only when the
+        // Automation grant already exists — never a surprise prompt.
+        if BrowserCapture.family(of: entry) != nil,
+           Permissions.automationStatus(bundleID: bundleID) == .granted {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak entry] in
+                guard let entry,
+                      FocusTracker.shared.history.first?.sameWindow(as: entry.axWindow) == true
+                        || entry.knownTab == nil
+                else { return }
+                BrowserCapture.prefetchTab(entry)
+            }
+        }
         // Keep a few spares beyond maxEntries: the frontmost window is
         // excluded at picker time.
         while history.count > Config.maxEntries + 3 {

@@ -17,6 +17,38 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Focus-time tab prefetch machinery: --prefetch-test <browser-query> <out>
+if let i = CommandLine.arguments.firstIndex(of: "--prefetch-test"),
+   CommandLine.arguments.count > i + 2 {
+    let outPath = CommandLine.arguments[i + 2]
+    let q = CommandLine.arguments[i + 1].lowercased()
+    guard let target = NSWorkspace.shared.runningApplications.first(where: {
+        ($0.localizedName ?? "").lowercased().contains(q)
+    }), let win = AX.element(AX.application(target.processIdentifier),
+                             kAXFocusedWindowAttribute as String) else {
+        try? "no app/window for \(q)\n".write(toFile: outPath, atomically: true,
+                                              encoding: .utf8)
+        exit(1)
+    }
+    let entry = HistoryEntry(axWindow: win, pid: target.processIdentifier,
+                             appName: target.localizedName ?? "?",
+                             bundleID: target.bundleIdentifier ?? "",
+                             title: AX.string(win, kAXTitleAttribute as String) ?? "")
+    let status = Permissions.automationStatus(bundleID: entry.bundleID)
+    BrowserCapture.prefetchTab(entry)
+    let deadline = Date().addingTimeInterval(8)
+    while Date() < deadline, entry.knownTab == nil {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1))
+    }
+    let known = entry.knownTab
+    try? ("""
+    automation: \(status.label)
+    title: \(entry.title)
+    knownTab: \(known.map { "\($0.url) — \($0.title)" } ?? "nil")
+    """ + "\n").write(toFile: outPath, atomically: true, encoding: .utf8)
+    exit(known == nil ? 1 : 0)
+}
+
 // Archive listing + retention against a synthetic dir: --archive-test
 if CommandLine.arguments.contains("--archive-test") {
     let dir = FileManager.default.temporaryDirectory
