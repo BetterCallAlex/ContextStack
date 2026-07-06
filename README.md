@@ -18,6 +18,9 @@ window, pick what to grab. It's pasted right where you were typing.
 
 <p align="center"><img src="docs/picker.png" width="680" alt="Recent-windows picker"></p>
 
+**Stack it:** press Tab in the picker to mark several windows — Enter
+captures them all and pastes one combined markdown document.
+
 Pick a window, and ContextStack offers the best captures for what it is —
 with the most likely one already on top, so **Enter-Enter** usually does it:
 

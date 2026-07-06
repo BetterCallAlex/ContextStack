@@ -17,6 +17,55 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Multi-select stack through the production combiner:
+// --stack-test <app1> <app2> <out>   (run via open -n -W ... --args)
+if let i = CommandLine.arguments.firstIndex(of: "--stack-test"),
+   CommandLine.arguments.count > i + 3 {
+    Delivery.suppressAutoPaste = true
+    let outPath = CommandLine.arguments[i + 3]
+    var entries: [HistoryEntry] = []
+    for q in [CommandLine.arguments[i + 1], CommandLine.arguments[i + 2]] {
+        guard let target = NSWorkspace.shared.runningApplications.first(where: {
+            ($0.localizedName ?? "").lowercased().contains(q.lowercased())
+        }), let win = AX.element(AX.application(target.processIdentifier),
+                                 kAXFocusedWindowAttribute as String) else { continue }
+        entries.append(HistoryEntry(
+            axWindow: win, pid: target.processIdentifier,
+            appName: target.localizedName ?? "?",
+            bundleID: target.bundleIdentifier ?? "",
+            title: AX.string(win, kAXTitleAttribute as String) ?? ""))
+    }
+    guard entries.count == 2 else {
+        try? "need two running apps with windows\n"
+            .write(toFile: outPath, atomically: true, encoding: .utf8)
+        exit(1)
+    }
+    let saved = NSPasteboard.general.string(forType: .string)
+    NSPasteboard.general.clearContents()
+    CombinedCapture.run(entries: entries)
+    let deadline = Date().addingTimeInterval(35)
+    var combined: String?
+    while Date() < deadline {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.2))
+        if let s = NSPasteboard.general.string(forType: .string),
+           s.hasPrefix("# Context stack") {
+            combined = s
+            break
+        }
+    }
+    if let saved { Delivery.setClipboard(saved) }
+    if let combined {
+        let sections = combined.components(separatedBy: "\n---\n").count
+        try? ("stack chars=\(combined.count) sections=\(sections)\n"
+              + combined.split(separator: "\n").prefix(8).joined(separator: "\n") + "\n")
+            .write(toFile: outPath, atomically: true, encoding: .utf8)
+        exit(0)
+    }
+    try? "no combined stack on clipboard within 35s\n"
+        .write(toFile: outPath, atomically: true, encoding: .utf8)
+    exit(1)
+}
+
 // Clipboard observer shape detection: --clipboard-test
 // Saves and restores the user's clipboard around the synthetic copy.
 if CommandLine.arguments.contains("--clipboard-test") {

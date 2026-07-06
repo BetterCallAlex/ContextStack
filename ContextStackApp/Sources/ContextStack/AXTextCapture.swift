@@ -21,11 +21,17 @@ enum AXTextCapture {
         }
     }
 
-    static func captureWindowText(_ entry: HistoryEntry) {
+    /// Tree-walk text without delivery (multi-select uses this too).
+    static func windowText(_ entry: HistoryEntry) -> String? {
         var acc: [String] = []
         var budget = 3000
         collect(entry.axWindow, into: &acc, depth: 0, budget: &budget)
         let text = acc.joined(separator: "\n")
+        return text.isEmpty ? nil : text
+    }
+
+    static func captureWindowText(_ entry: HistoryEntry) {
+        let text = windowText(entry) ?? ""
         if !text.isEmpty {
             Delivery.text(entry: entry, kind: "window text (Accessibility)",
                           source: entry.appName, content: text)

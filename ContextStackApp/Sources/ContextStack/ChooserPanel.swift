@@ -34,12 +34,19 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
     private var allItems: [ChooserItem] = []
     private var filtered: [ChooserItem] = []
     private var onPick: ((Int?) -> Void)?
+    /// When set, Tab toggles a mark on the highlighted row and Enter with
+    /// marks returns them all (in item order) instead of the single pick.
+    private var onPickMulti: (([Int]) -> Void)?
+    private var marked: Set<Int> = []
 
     func show(items: [ChooserItem], placeholder: String, preselect: Int = 0,
-              onPick: @escaping (Int?) -> Void) {
+              onPick: @escaping (Int?) -> Void,
+              onPickMulti: (([Int]) -> Void)? = nil) {
         if panel == nil { buildPanel() }
         // Replace any pending callback (e.g. re-invoking the hotkey while open).
         self.onPick = onPick
+        self.onPickMulti = onPickMulti
+        marked = []
         allItems = items
         field.stringValue = ""
         field.placeholderString = placeholder
@@ -175,12 +182,28 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
         case #selector(NSResponder.insertNewline(_:)):
             pickSelected()
             return true
+        case #selector(NSResponder.insertTab(_:)):
+            toggleMark()
+            return true
         case #selector(NSResponder.cancelOperation(_:)):
             finish(with: nil)
             return true
         default:
             return false
         }
+    }
+
+    /// Tab: mark/unmark the highlighted row (multi-capture), advance one.
+    private func toggleMark() {
+        guard onPickMulti != nil else { return }
+        let row = table.selectedRow
+        guard row >= 0, row < filtered.count else { return }
+        let index = filtered[row].index
+        if marked.contains(index) { marked.remove(index) } else { marked.insert(index) }
+        let selected = table.selectedRow
+        table.reloadData()
+        table.selectRowIndexes(IndexSet(integer: selected), byExtendingSelection: false)
+        moveSelection(1)
     }
 
     private func moveSelection(_ delta: Int) {
@@ -191,6 +214,15 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
     }
 
     private func pickSelected() {
+        if !marked.isEmpty, let multi = onPickMulti {
+            let picks = marked.sorted()
+            onPick = nil
+            onPickMulti = nil
+            marked = []
+            multi(picks)
+            if onPick == nil { panel.orderOut(nil) }
+            return
+        }
         let row = table.selectedRow
         guard row >= 0, row < filtered.count else {
             finish(with: nil)
@@ -248,7 +280,8 @@ final class Chooser: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
             cell.addSubview(sub)
         }
         (cell.viewWithTag(1) as? NSImageView)?.image = item.image
-        (cell.viewWithTag(2) as? NSTextField)?.stringValue = item.text
+        (cell.viewWithTag(2) as? NSTextField)?.stringValue =
+            (marked.contains(item.index) ? "✓ " : "") + item.text
         (cell.viewWithTag(3) as? NSTextField)?.stringValue = item.subText
         return cell
     }

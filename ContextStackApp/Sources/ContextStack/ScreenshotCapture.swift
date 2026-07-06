@@ -45,6 +45,32 @@ enum ScreenshotCapture {
     }
 
     static func capture(_ entry: HistoryEntry, mode: Mode) {
+        withWindowImage(entry) { image, failure in
+            if let image {
+                deliver(image, entry: entry, mode: mode)
+            } else {
+                Delivery.failure("ContextStack", failure ?? "Snapshot failed")
+            }
+        }
+    }
+
+    /// OCR text without delivery (multi-select uses this as last resort).
+    static func ocrText(_ entry: HistoryEntry,
+                        completion: @escaping (String?) -> Void) {
+        withWindowImage(entry) { image, _ in
+            guard let image else {
+                completion(nil)
+                return
+            }
+            recognizeText(in: image, completion: completion)
+        }
+    }
+
+    /// The shared capture pipeline: SCK for on-screen windows, legacy
+    /// CGWindowList for other-Space/minimized ones. Completion on main.
+    private static func withWindowImage(
+        _ entry: HistoryEntry,
+        completion: @escaping (CGImage?, String?) -> Void) {
         Task { @MainActor in
             do {
                 let content = try await shareableContent()
@@ -52,8 +78,7 @@ enum ScreenshotCapture {
                     $0.owningApplication?.processID == entry.pid
                 }
                 guard let scWindow = match(entry, in: appWindows) else {
-                    Delivery.failure("ContextStack",
-                                    "Snapshot failed — window not found (closed?)")
+                    completion(nil, "Snapshot failed — window not found (closed?)")
                     return
                 }
                 // SCContentFilter(desktopIndependentWindow:) hard-aborts the
@@ -70,23 +95,21 @@ enum ScreenshotCapture {
                         cfg.showsCursor = false
                         let image = try await SCScreenshotManager.captureImage(
                             contentFilter: filter, configuration: cfg)
-                        deliver(image, entry: entry, mode: mode)
+                        completion(image, nil)
                         return
                     } catch {
                         csLog("SCK capture failed, trying legacy:", error.localizedDescription)
                     }
                 }
                 if let image = legacyCapture(windowID: scWindow.windowID) {
-                    deliver(image, entry: entry, mode: mode)
+                    completion(image, nil)
                 } else {
-                    Delivery.failure("ContextStack",
-                                    "Snapshot failed — window may be minimized; "
-                                    + "bring it on screen and try again")
+                    completion(nil, "Snapshot failed — window may be minimized; "
+                               + "bring it on screen and try again")
                 }
             } catch {
-                Delivery.failure("ContextStack",
-                                "Snapshot failed — check the Screen Recording permission "
-                                + "(\(error.localizedDescription))")
+                completion(nil, "Snapshot failed — check the Screen Recording permission "
+                           + "(\(error.localizedDescription))")
             }
         }
     }

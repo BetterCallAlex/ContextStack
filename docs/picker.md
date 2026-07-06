@@ -27,6 +27,13 @@ updated: 2026-07-06
 - [[PickerFlow.swift]] — two stages, action list assembly
 - [[HistoryEntry.swift]] — entry + `EntryResolution` cache/prewarm
 
+**Multi-select** ([[CombinedCapture.swift]]): Tab marks rows (✓), Enter
+captures every marked entry via its best text-yielding capture (selection →
+remote file → local file → page text → excerpt → window text → OCR → title,
+never dies) and pastes ONE combined markdown doc. DispatchGroup + 30 s
+belt-and-braces timeout; failed sections say so instead of vanishing. No
+ranker logging for multi picks (no single choice to learn from).
+
 **Snappiness (deliberate, measured):**
 - No delay between stages; panel stays up across stage switch (`finish()` runs
   callback first, orders out only if callback didn't re-`show()`).
@@ -47,6 +54,7 @@ updated: 2026-07-06
 locate → `magnifyingglass`). Template-tinted, no drawn assets.
 
 ## Changelog
+- 2026-07-06 — Multi-select stack capture (Tab to mark); verified live 2-app 68k-char stack.
 - 2026-07-06 — Hotkey configurable via `defaults` (`hotkey` string).
 - 2026-07-06 — SF Symbol per action row; variant overrides for SSH/Spotlight.
 - 2026-07-06 — Window preselection: learned highlight ([[WindowRanker.swift]]),

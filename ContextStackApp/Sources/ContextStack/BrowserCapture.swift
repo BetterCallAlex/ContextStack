@@ -176,8 +176,15 @@ enum BrowserCapture {
         }
     }
 
-    static func capturePage(_ entry: HistoryEntry, wantHTML: Bool) {
-        guard let (family, appName) = family(of: entry) else { return }
+    /// Page content without delivery — shared by the single capture action
+    /// and multi-select stacking. Completion on main:
+    /// (content, sourceURL, kindLabel) or (nil, nil, failureReason).
+    static func fetchPage(_ entry: HistoryEntry, wantHTML: Bool,
+                          completion: @escaping (String?, String?, String) -> Void) {
+        guard let (family, appName) = family(of: entry) else {
+            completion(nil, nil, "not a browser window")
+            return
+        }
         let resolved = cachedTab(entry)
             ?? resolveTab(family: family, appName: appName, wantedTitle: entry.title)
             ?? knownTab(entry)
@@ -188,16 +195,14 @@ enum BrowserCapture {
         let js = wantHTML ? "document.documentElement.outerHTML" : "document.body.innerText"
         if let res = runTabJS(family: family, appName: appName,
                               wantedTitle: entry.title, js: js) {
-            Delivery.text(entry: entry, kind: wantHTML ? "full HTML" : "page text",
-                          source: url, content: res)
+            completion(res, url, wantHTML ? "full HTML" : "page text")
             return
         }
 
         // Fallback: plain fetch of the URL (no login/session, but always works).
         guard let url, let fetchURL = URL(string: url) else {
-            Delivery.failure("ContextStack",
-                            "Could not get a URL from \(appName) "
-                            + "(check Automation permission for ContextStack)")
+            completion(nil, nil, "Could not get a URL from \(appName) "
+                       + "(check Automation permission for ContextStack)")
             return
         }
         URLSession.shared.dataTask(with: fetchURL) { data, response, _ in
@@ -206,27 +211,34 @@ enum BrowserCapture {
                   let body = String(data: data, encoding: .utf8)
                     ?? String(data: data, encoding: .isoLatin1) else {
                 DispatchQueue.main.async {
-                    Delivery.failure("ContextStack", "Fetch failed (\(status)) for \(url)")
+                    completion(nil, url, "Fetch failed (\(status)) for \(url)")
                 }
                 return
             }
             DispatchQueue.main.async {
                 if wantHTML {
-                    Delivery.text(entry: entry, kind: "full HTML (fetched)",
-                                  source: url, content: body)
+                    completion(body, url, "full HTML (fetched)")
                 } else {
                     htmlToText(body) { txt in
                         if let txt {
-                            Delivery.text(entry: entry, kind: "page text (fetched)",
-                                          source: url, content: txt)
+                            completion(txt, url, "page text (fetched)")
                         } else {
-                            Delivery.text(entry: entry, kind: "raw HTML (fetched)",
-                                          source: url, content: body)
+                            completion(body, url, "raw HTML (fetched)")
                         }
                     }
                 }
             }
         }.resume()
+    }
+
+    static func capturePage(_ entry: HistoryEntry, wantHTML: Bool) {
+        fetchPage(entry, wantHTML: wantHTML) { content, url, kind in
+            if let content {
+                Delivery.text(entry: entry, kind: kind, source: url, content: content)
+            } else {
+                Delivery.failure("ContextStack", kind)
+            }
+        }
     }
 
     static func captureLink(_ entry: HistoryEntry) {

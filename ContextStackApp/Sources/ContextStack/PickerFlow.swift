@@ -95,13 +95,16 @@ enum PickerFlow {
                                            subText: p.subText + "  · likely",
                                            image: p.image, index: p.index)
         }
-        Chooser.shared.show(items: items, placeholder: "Recent windows…",
-                            preselect: predicted) { idx in
+        Chooser.shared.show(items: items, placeholder: "Recent windows… (Tab marks for a stack)",
+                            preselect: predicted, onPick: { idx in
             guard let idx else { return }
             WindowRanker.shared.record(target: targetBundleID,
                                        entries: windowFeatures, chosen: idx)
             showActions(for: entries[idx], targetBundleID: targetBundleID)
-        }
+        }, onPickMulti: { picks in
+            // Multi-capture: no single action/window choice to learn from.
+            CombinedCapture.run(entries: picks.map { entries[$0] })
+        })
     }
 
     /// Row label without blocking on AX: exact when the resolution cache is
