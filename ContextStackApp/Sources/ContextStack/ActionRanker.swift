@@ -9,6 +9,7 @@ enum ActionID: String, CaseIterable, Codable {
     // Appended cases only — the position in allCases is the class index of
     // the weight matrix, so existing learned weights must keep their slots.
     case selectedText, visibleExcerpt
+    case screenshotOCR
 }
 
 /// Everything the ranker is allowed to know about one picker invocation.

@@ -124,6 +124,43 @@ if let i = CommandLine.arguments.firstIndex(of: "--remote-test"),
     exit(0)
 }
 
+// OCR through the production capture path; text lands on the clipboard.
+// --ocr-test <app-query> <out-file>   (run via open -n -W ... --args)
+if let i = CommandLine.arguments.firstIndex(of: "--ocr-test"),
+   CommandLine.arguments.count > i + 2 {
+    Delivery.suppressAutoPaste = true
+    let outPath = CommandLine.arguments[i + 2]
+    let q = CommandLine.arguments[i + 1].lowercased()
+    guard let target = NSWorkspace.shared.runningApplications.first(where: {
+        ($0.localizedName ?? "").lowercased().contains(q)
+    }), let win = AX.element(AX.application(target.processIdentifier),
+                             kAXFocusedWindowAttribute as String) else {
+        try? "no app/window for \(q)\n".write(toFile: outPath, atomically: true,
+                                              encoding: .utf8)
+        exit(1)
+    }
+    let entry = HistoryEntry(axWindow: win, pid: target.processIdentifier,
+                             appName: target.localizedName ?? "?",
+                             bundleID: target.bundleIdentifier ?? "",
+                             title: AX.string(win, kAXTitleAttribute as String) ?? "")
+    NSPasteboard.general.clearContents()
+    ScreenshotCapture.capture(entry, mode: .ocr)
+    let deadline = Date().addingTimeInterval(15)
+    while Date() < deadline {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.2))
+        if let s = NSPasteboard.general.string(forType: .string), !s.isEmpty {
+            let lines = s.split(separator: "\n")
+            try? ("ocr chars=\(s.count) lines=\(lines.count)\nfirst lines:\n"
+                  + lines.prefix(6).joined(separator: "\n") + "\n")
+                .write(toFile: outPath, atomically: true, encoding: .utf8)
+            exit(0)
+        }
+    }
+    try? "ocr produced nothing in 15s\n".write(toFile: outPath, atomically: true,
+                                               encoding: .utf8)
+    exit(1)
+}
+
 // End-to-end test of the production screenshot path against a running app's
 // focused window; run via `open -n -W ... --args --shot-test <app>` so TCC
 // grants apply. Writes the PNG to the capture dir like the real action.

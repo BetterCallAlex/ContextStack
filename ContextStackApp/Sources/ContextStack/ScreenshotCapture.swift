@@ -2,6 +2,7 @@ import AppKit
 import ScreenCaptureKit
 import ImageIO
 import UniformTypeIdentifiers
+import Vision
 
 /// Window screenshots via ScreenCaptureKit (needs the Screen Recording
 /// permission). The SCWindow is matched to the AX window by pid + title,
@@ -33,7 +34,17 @@ enum ScreenshotCapture {
         return content
     }
 
+    enum Mode {
+        case image   // clipboard image + archived PNG
+        case path    // archived PNG, path on clipboard
+        case ocr     // pixels → text (Vision) — works where AX can't
+    }
+
     static func capture(_ entry: HistoryEntry, pathOnly: Bool) {
+        capture(entry, mode: pathOnly ? .path : .image)
+    }
+
+    static func capture(_ entry: HistoryEntry, mode: Mode) {
         Task { @MainActor in
             do {
                 let content = try await shareableContent()
@@ -59,14 +70,14 @@ enum ScreenshotCapture {
                         cfg.showsCursor = false
                         let image = try await SCScreenshotManager.captureImage(
                             contentFilter: filter, configuration: cfg)
-                        deliver(image, entry: entry, pathOnly: pathOnly)
+                        deliver(image, entry: entry, mode: mode)
                         return
                     } catch {
                         csLog("SCK capture failed, trying legacy:", error.localizedDescription)
                     }
                 }
                 if let image = legacyCapture(windowID: scWindow.windowID) {
-                    deliver(image, entry: entry, pathOnly: pathOnly)
+                    deliver(image, entry: entry, mode: mode)
                 } else {
                     Delivery.failure("ContextStack",
                                     "Snapshot failed — window may be minimized; "
@@ -113,10 +124,22 @@ enum ScreenshotCapture {
                                 [.boundsIgnoreFraming, .bestResolution])
     }
 
-    private static func deliver(_ image: CGImage, entry: HistoryEntry, pathOnly: Bool) {
+    private static func deliver(_ image: CGImage, entry: HistoryEntry, mode: Mode) {
+        if case .ocr = mode {
+            recognizeText(in: image) { text in
+                if let text {
+                    Delivery.text(entry: entry, kind: "screenshot text (OCR)",
+                                  source: entry.appName, content: text)
+                } else {
+                    Delivery.failure("ContextStack",
+                                     "No text recognized in the window image")
+                }
+            }
+            return
+        }
         let path = Config.captureDir + "/" + Delivery.captureName(entry, ext: "png")
 
-        if pathOnly {
+        if case .path = mode {
             // The path is what gets pasted — the file must exist first.
             guard writePNG(image, to: path) else {
                 Delivery.failure("ContextStack", "Could not write PNG to \(path)")
@@ -138,6 +161,28 @@ enum ScreenshotCapture {
                 Delivery.notify("ContextStack: screenshot copied as image",
                                 ok ? "Also saved: \(path)" : "PNG save failed")
             }
+        }
+    }
+
+    /// On-device Vision OCR; reading order top-to-bottom via bounding boxes.
+    private static func recognizeText(in image: CGImage,
+                                      completion: @escaping (String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = true
+            let handler = VNImageRequestHandler(cgImage: image)
+            do {
+                try handler.perform([request])
+            } catch {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let lines = (request.results ?? [])
+                .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+                .compactMap { $0.topCandidates(1).first?.string }
+            let text = lines.joined(separator: "\n")
+            DispatchQueue.main.async { completion(text.isEmpty ? nil : text) }
         }
     }
 

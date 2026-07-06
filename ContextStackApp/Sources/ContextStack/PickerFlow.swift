@@ -17,6 +17,7 @@ extension ActionID {
         case .titleLine: return "textformat"
         case .selectedText: return "highlighter"
         case .visibleExcerpt: return "eye"
+        case .screenshotOCR: return "doc.viewfinder"
         }
     }
 
@@ -323,6 +324,11 @@ enum PickerFlow {
             text: "Screenshot → file path",
             subText: "Snapshot saved as PNG, its path copied (for Claude Code)",
             run: { ScreenshotCapture.capture(entry, pathOnly: true) }))
+        acts.append(Action(
+            id: .screenshotOCR,
+            text: "Screenshot → text (OCR)",
+            subText: "Read the window's pixels — works where Accessibility can't",
+            run: { ScreenshotCapture.capture(entry, mode: .ocr) }))
 
         if !isBrowser {
             // Only offer the excerpt when some path can actually serve it:

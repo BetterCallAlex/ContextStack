@@ -26,6 +26,10 @@ Claude Code).
 - Delivery order: clipboard image + paste first, PNG encode/write async
   behind; path-only variant writes first (path is the payload).
 
+**OCR** (`Mode.ocr`): same capture pipeline, then Vision
+`VNRecognizeTextRequest` (accurate, on-device) → text delivery. The escape
+hatch for AX-less apps (Zed, Electron) — reads the whole window incl. chrome.
+
 **Gotchas:**
 - Minimized windows: both paths can fail → beeping failure, "bring on screen".
 - SCK config sized from `filter.contentRect × pointPixelScale`.
@@ -33,6 +37,7 @@ Claude Code).
 **Links:** [[delivery]], [[picker]]
 
 ## Changelog
+- 2026-07-06 — Screenshot → text (OCR) action; verified on Zed (3.4k chars).
 - 2026-07-06 — Initial note; state as of a744b63.
 - 2026-07-05 — SC content prefetch + async PNG (359a7eb).
 - 2026-07-02 — Off-screen abort guard + legacy fallback (fa7f3b4).
