@@ -1,7 +1,7 @@
 ---
 tags: [index]
 docs_path: docs
-last_documented_commit: 854a010
+last_documented_commit: 32a2271
 last_documented: 2026-07-06
 ---
 
