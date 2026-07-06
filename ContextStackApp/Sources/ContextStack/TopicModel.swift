@@ -15,9 +15,13 @@ enum TopicModel {
     private static let sessionWindow: TimeInterval = 2 * 3600
     private static let maxCaptures = 10
     private static let snippetChars = 1000
+    /// Main-thread confined — read and written on main only.
     private static var topicCache: (vector: [Double], at: Date)?
 
     private static let embedding: NLEmbedding? = NLEmbedding.sentenceEmbedding(for: .english)
+    /// NLEmbedding isn't documented thread-safe and we call it from the
+    /// prewarm queue, the refresh queue and tests — serialize.
+    private static let embeddingLock = NSLock()
 
     static var available: Bool { embedding != nil }
 
@@ -28,6 +32,8 @@ enum TopicModel {
         let snippet = String(text.prefix(snippetChars))
             .replacingOccurrences(of: "\n", with: " ")
         guard !snippet.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        embeddingLock.lock()
+        defer { embeddingLock.unlock() }
         return embedding.vector(for: snippet)
     }
 
@@ -45,17 +51,25 @@ enum TopicModel {
 
     // -------------------------------------------------------- session topic
 
-    /// Mean embedding of the session's recent pastes; cached 60 s. Call
-    /// `refreshTopicVector()` from a background queue at hotkey time.
+    /// Mean embedding of the session's recent pastes; cached 60 s.
+    /// Main thread only.
     static func topicVector() -> [Double]? {
         guard Config.contentLearning else { return nil }
         if let c = topicCache, Date().timeIntervalSince(c.at) < 60 { return c.vector }
         return nil
     }
 
+    /// True while the cache is fresh — callers check this on main before
+    /// dispatching a refresh.
+    static var topicIsFresh: Bool {
+        if let c = topicCache, Date().timeIntervalSince(c.at) < 60 { return true }
+        return false
+    }
+
+    /// Heavy part (file IO + embeddings) — call from a background queue;
+    /// the cache write hops to main.
     static func refreshTopicVector(dir: String = Config.captureDir) {
         guard Config.contentLearning else { return }
-        if let c = topicCache, Date().timeIntervalSince(c.at) < 60 { return }
         let cutoff = Date().addingTimeInterval(-sessionWindow)
         let recent = CaptureArchive.recent(limit: maxCaptures, dir: dir)
             .filter { !$0.isImage && $0.date > cutoff }
@@ -67,7 +81,7 @@ enum TopicModel {
             if let v = vector(for: body.isEmpty ? text : body) { vectors.append(v) }
         }
         guard let dim = vectors.first?.count else {
-            topicCache = nil
+            DispatchQueue.main.async { topicCache = nil }
             return
         }
         var mean = [Double](repeating: 0, count: dim)

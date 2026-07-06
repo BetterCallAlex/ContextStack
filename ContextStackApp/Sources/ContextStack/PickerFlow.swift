@@ -68,7 +68,7 @@ enum PickerFlow {
         // Resolve every entry in the background now; by the time the user
         // picks one, the expensive part is already done.
         for e in entries { e.prewarmResolution() }
-        if Config.contentLearning {
+        if Config.contentLearning, !TopicModel.topicIsFresh {
             DispatchQueue.global(qos: .userInitiated).async {
                 TopicModel.refreshTopicVector()
             }

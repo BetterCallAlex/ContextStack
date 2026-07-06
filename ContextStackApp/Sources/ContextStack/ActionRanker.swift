@@ -86,9 +86,11 @@ final class ActionRanker {
     private var sourceCounts: [String: Int] = [:]
     private var lastGlobal: (action: ActionID, time: Date)?
     private var lastPerSource: [String: (action: ActionID, time: Date)] = [:]
-    /// For correction detection: the previous pick in full.
+    /// For correction detection: the previous pick in full, including the
+    /// exact feature indices it trained on — the relabel must touch the same
+    /// weights, and the sequence state has moved on by correction time.
     private var lastPick: (context: RankContext, presented: [ActionID],
-                           chosen: ActionID, time: Date)?
+                           chosen: ActionID, time: Date, features: [Int])?
     /// Re-picking the same window within this window with a different action
     /// means the first pick was a mistake — relabel it.
     private static let correctionGap: TimeInterval = 30
@@ -212,7 +214,11 @@ final class ActionRanker {
     /// Softmax over the presented actions only.
     func probabilities(context: RankContext, presented: [ActionID],
                        at time: Date = Date()) -> [ActionID: Float] {
-        let feats = activeFeatures(context, at: time)
+        probabilities(features: activeFeatures(context, at: time), presented: presented)
+    }
+
+    private func probabilities(features feats: [Int],
+                               presented: [ActionID]) -> [ActionID: Float] {
         let raw = presented.map { score(class: Self.classIndex[$0]!, features: feats) }
         let maxRaw = raw.max() ?? 0
         let exps = raw.map { expf($0 - maxRaw) }
@@ -252,17 +258,15 @@ final class ActionRanker {
            prev.context.hasSelection == context.hasSelection,
            prev.chosen != chosen,
            prev.presented.contains(chosen) {
-            let feats = activeFeatures(prev.context, at: prev.time)
-            let probs = probabilities(context: prev.context,
-                                      presented: prev.presented, at: prev.time)
+            let probs = probabilities(features: prev.features, presented: prev.presented)
             for a in prev.presented {
                 let gradient = probs[a]! - (a == chosen ? 1 : 0)
                 let step = Self.learningRate * Self.correctionWeight * gradient
                 let base = Self.classIndex[a]! * Self.dims
-                for f in feats { weights[base + f] -= step }
+                for f in prev.features { weights[base + f] -= step }
             }
         }
-        lastPick = (context, presented, chosen, time)
+        lastPick = (context, presented, chosen, time, feats)
     }
 
     /// How many picks the model has seen from this source app.
