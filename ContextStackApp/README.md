@@ -133,6 +133,7 @@ design, edit `IconKit.swift` and rebuild; `--render-icon` also writes
 Via `defaults` (domain `cloud.alexrank.ContextStack`):
 
 ```sh
+defaults write cloud.alexrank.ContextStack hotkey -string "cmd+shift+k"  # default: ctrl+alt+space
 defaults write cloud.alexrank.ContextStack maxEntries -int 10
 defaults write cloud.alexrank.ContextStack autoPaste -bool false     # default: true
 defaults write cloud.alexrank.ContextStack smartRanking -bool false  # default: true

@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         FocusTracker.shared.start()
         hotkey.onHotkey = { PickerFlow.showMainPicker() }
-        hotkey.register()
+        hotkey.register(spec: Config.hotkey)
 
         let firstRun = !UserDefaults.standard.bool(forKey: "onboardingShown")
         if firstRun || !Permissions.accessibilityGranted {
@@ -39,8 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         let show = NSMenuItem(title: "Show Picker", action: #selector(showPicker),
-                              keyEquivalent: " ")
-        show.keyEquivalentModifierMask = [.control, .option]
+                              keyEquivalent: hotkey.activeSpec?.keyEquivalent ?? "")
+        show.keyEquivalentModifierMask = hotkey.activeSpec?.cocoaModifiers ?? []
         show.target = self
         menu.addItem(show)
 

@@ -17,6 +17,19 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Parser check: --hotkey-test <spec>
+if let i = CommandLine.arguments.firstIndex(of: "--hotkey-test"),
+   CommandLine.arguments.count > i + 1 {
+    let spec = CommandLine.arguments[i + 1]
+    if let parsed = HotkeyManager.parse(spec) {
+        print("ok: keyCode=\(parsed.keyCode) carbonMods=\(parsed.carbonModifiers) "
+              + "equivalent='\(parsed.keyEquivalent)'")
+        exit(0)
+    }
+    print("invalid spec: \(spec)")
+    exit(1)
+}
+
 // Live check of selection + visible-excerpt reads against a running app:
 // --selection-test <app-query> <out-file>  (run via open -n -W ... --args)
 if let i = CommandLine.arguments.firstIndex(of: "--selection-test"),

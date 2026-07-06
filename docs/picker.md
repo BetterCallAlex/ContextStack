@@ -21,7 +21,8 @@ updated: 2026-07-06
 **Shape:**
 - [[FocusTracker.swift]] — NSWorkspace activation + one AXObserver per app
   (`kAXFocusedWindowChangedNotification`); keeps `maxEntries+3` entries
-- [[HotkeyManager.swift]] — Carbon `RegisterEventHotKey`, no permissions
+- [[HotkeyManager.swift]] — Carbon `RegisterEventHotKey`, no permissions;
+  binding from `hotkey` default ("ctrl+alt+space"), parser rejects bare keys
 - [[ChooserPanel.swift]] — Spotlight-style panel; search field + table
 - [[PickerFlow.swift]] — two stages, action list assembly
 - [[HistoryEntry.swift]] — entry + `EntryResolution` cache/prewarm
@@ -46,6 +47,7 @@ updated: 2026-07-06
 locate → `magnifyingglass`). Template-tinted, no drawn assets.
 
 ## Changelog
+- 2026-07-06 — Hotkey configurable via `defaults` (`hotkey` string).
 - 2026-07-06 — SF Symbol per action row; variant overrides for SSH/Spotlight.
 - 2026-07-06 — Window preselection: learned highlight ([[WindowRanker.swift]]),
   recency order untouched; `· likely` badge on predicted row (0a0e257).

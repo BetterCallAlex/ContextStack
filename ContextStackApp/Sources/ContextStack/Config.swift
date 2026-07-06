@@ -14,6 +14,7 @@ enum Config {
             "notifyOnCopy": true,
             "maxFileBytes": 256 * 1024,
             "captureDir": NSHomeDirectory() + "/ContextStack",
+            "hotkey": "ctrl+alt+space",
         ])
     }
 
@@ -43,6 +44,11 @@ enum Config {
     /// Where captures (markdown/PNG) are written.
     static var captureDir: String {
         d.string(forKey: "captureDir") ?? NSHomeDirectory() + "/ContextStack"
+    }
+
+    /// Picker hotkey, e.g. "ctrl+alt+space", "cmd+shift+k", "ctrl+f19".
+    static var hotkey: String {
+        d.string(forKey: "hotkey") ?? "ctrl+alt+space"
     }
 
     /// Browsers that speak the Chrome AppleScript dictionary
