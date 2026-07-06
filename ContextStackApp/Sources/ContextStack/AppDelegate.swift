@@ -4,6 +4,8 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkey = HotkeyManager()
     private var statusItem: NSStatusItem!
+    private var cleanupTimer: Timer?
+    private var recentItems: [CaptureArchive.Item] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Config.registerDefaults()
@@ -22,6 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if firstRun || !Permissions.accessibilityGranted {
             UserDefaults.standard.set(true, forKey: "onboardingShown")
             Onboarding.show()
+        }
+
+        CaptureArchive.cleanup()
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { _ in
+            CaptureArchive.cleanup()
         }
         csLog("launched, capture dir:", Config.captureDir)
     }
@@ -58,6 +65,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ranking.target = self
         menu.addItem(ranking)
 
+        recentItems = CaptureArchive.recent()
+        let recentMenu = NSMenu()
+        if recentItems.isEmpty {
+            let none = NSMenuItem(title: "No captures yet", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            recentMenu.addItem(none)
+        } else {
+            for (i, item) in recentItems.enumerated() {
+                let mi = NSMenuItem(title: item.menuTitle,
+                                    action: #selector(repasteRecent(_:)), keyEquivalent: "")
+                mi.tag = i
+                mi.target = self
+                recentMenu.addItem(mi)
+            }
+        }
+        let recent = NSMenuItem(title: "Recent Captures", action: nil, keyEquivalent: "")
+        recent.submenu = recentMenu
+        menu.addItem(recent)
+
         let folder = NSMenuItem(title: "Open Capture Folder",
                                 action: #selector(openCaptureFolder), keyEquivalent: "")
         folder.target = self
@@ -93,6 +119,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleSmartRanking() {
         Config.smartRanking.toggle()
+    }
+
+    @objc private func repasteRecent(_ sender: NSMenuItem) {
+        guard recentItems.indices.contains(sender.tag) else { return }
+        CaptureArchive.repaste(recentItems[sender.tag])
     }
 
     @objc private func openCaptureFolder() {

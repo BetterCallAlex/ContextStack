@@ -17,6 +17,47 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
     IconKit.renderIconset(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
     exit(0)
 }
+// Archive listing + retention against a synthetic dir: --archive-test
+if CommandLine.arguments.contains("--archive-test") {
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("cs-archive-test-\(ProcessInfo.processInfo.processIdentifier)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    var failures = 0
+    func check(_ name: String, _ ok: Bool) {
+        if !ok { failures += 1 }
+        print("  \(ok ? "ok " : "MISS") \(name)")
+    }
+    let fm = FileManager.default
+    func makeFile(_ name: String, ageDays: Double) {
+        let url = dir.appendingPathComponent(name)
+        try? "x".write(to: url, atomically: true, encoding: .utf8)
+        try? fm.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-ageDays * 86400)],
+            ofItemAtPath: url.path)
+    }
+    makeFile("20260701-120000-Old-capture.md", ageDays: 10)
+    makeFile("20260705-120000-Newer-capture.md", ageDays: 1)
+    makeFile("20260706-120000-New-shot.png", ageDays: 0.1)
+    makeFile("notes.txt", ageDays: 20) // foreign file — never touched
+
+    let recent = CaptureArchive.recent(limit: 10, dir: dir.path)
+    check("recent lists 3 captures (not the .txt)", recent.count == 3)
+    check("newest first", recent.first?.displayName == "New-shot")
+    check("display name strips timestamp", recent.last?.displayName == "Old-capture")
+    check("image flagged", recent.first?.isImage == true)
+
+    let removed = CaptureArchive.cleanup(retentionDays: 7, dir: dir.path)
+    check("cleanup removed exactly the 10-day-old capture", removed == 1)
+    check("survivors intact", CaptureArchive.recent(limit: 10, dir: dir.path).count == 2)
+    check("foreign file untouched",
+          fm.fileExists(atPath: dir.appendingPathComponent("notes.txt").path))
+    check("retention 0 keeps forever",
+          CaptureArchive.cleanup(retentionDays: 0, dir: dir.path) == 0)
+    print(failures == 0 ? "PASS" : "FAIL (\(failures))")
+    exit(failures == 0 ? 0 : 1)
+}
+
 // Parser check: --hotkey-test <spec>
 if let i = CommandLine.arguments.firstIndex(of: "--hotkey-test"),
    CommandLine.arguments.count > i + 1 {

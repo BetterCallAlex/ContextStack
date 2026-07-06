@@ -15,6 +15,7 @@ enum Config {
             "maxFileBytes": 256 * 1024,
             "captureDir": NSHomeDirectory() + "/ContextStack",
             "hotkey": "ctrl+alt+space",
+            "archiveRetentionDays": 7,
         ])
     }
 
@@ -50,6 +51,10 @@ enum Config {
     static var hotkey: String {
         d.string(forKey: "hotkey") ?? "ctrl+alt+space"
     }
+
+    /// Archived captures older than this are deleted (launch + daily).
+    /// 0 = keep forever.
+    static var archiveRetentionDays: Int { d.integer(forKey: "archiveRetentionDays") }
 
     /// Browsers that speak the Chrome AppleScript dictionary
     /// (bundle ID → name to use in `tell application`).

@@ -30,6 +30,11 @@ updated: 2026-07-06
 - `suppressAutoPaste` flag for CLI test modes — a test capture must not paste
   into whatever the user has focused.
 
+**Archive lifecycle** ([[CaptureArchive.swift]]): "Recent Captures" menu
+re-copies past captures (text verbatim incl. header, PNGs as images) +
+auto-paste. Retention: `archiveRetentionDays` (default 7, 0 = forever),
+cleanup at launch + daily; only touches `.md`/`.png` in the capture dir.
+
 **Gotchas:**
 - Notifications require a real .app bundle (`Bundle.main.bundleIdentifier`
   guard) — `swift run` gets logs only.
@@ -37,5 +42,6 @@ updated: 2026-07-06
 **Links:** [[picker]], [[screenshots]]
 
 ## Changelog
+- 2026-07-06 — Recent-captures re-paste + retention (default 7 d).
 - 2026-07-06 — Initial note; state as of a744b63. failure() beep (a744b63).
 - 2026-07-05 — Delay 250→120 ms; async archive (359a7eb).

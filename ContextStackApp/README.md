@@ -140,6 +140,7 @@ defaults write cloud.alexrank.ContextStack smartRanking -bool false  # default: 
 defaults write cloud.alexrank.ContextStack notifyOnCopy -bool false
 defaults write cloud.alexrank.ContextStack captureDir -string "$HOME/SomewhereElse"
 defaults write cloud.alexrank.ContextStack maxFileBytes -int 524288
+defaults write cloud.alexrank.ContextStack archiveRetentionDays -int 30  # default 7; 0 = keep forever
 ```
 
 Browser bundle-ID tables live in `Sources/ContextStack/Config.swift`.
