@@ -20,6 +20,7 @@ screenshots, remote files) and pastes it where you type. Repo = SwiftPM app in
 - [[selection-viewport]] — selected text + visible excerpt ("relevant lines")
 - [[screenshots]] — ScreenCaptureKit + other-Space fallback
 - [[delivery]] — clipboard, auto-paste, archive, failure feedback
+- [[local-llm]] — on-device summarization + capture tagging (FoundationModels)
 - [[permissions-signing]] — TCC identity, local cert, onboarding
 - [[build-release]] — build script, icon pipeline, dmg, CI
 

@@ -72,6 +72,7 @@ enum CLIModes {
         }
         if args.contains("--topic-test") { topicTest() }
         if args.contains("--salience-test") { salienceTest() }
+        if args.contains("--summarize-test") { summarizeTest() }
         if args.contains("--eval-log") { evalLog() }
         if let app1 = value(after: "--stack-test"),
            let app2 = value(after: "--stack-test", offset: 2),
@@ -112,6 +113,60 @@ enum CLIModes {
     }
 
     // ------------------------------------------------------------- modes
+
+    /// Live check of the on-device LLM tier: availability, a real
+    /// summarization round trip, and a tagging round trip. Exits 0 with a
+    /// note when Apple Intelligence isn't available — that's a machine
+    /// state, not a code failure.
+    private static func summarizeTest() -> Never {
+        print("FoundationModels: \(LocalLLM.availabilityNote)")
+        guard LocalLLM.isAvailable else {
+            print("SKIP (LLM tier hides itself when unavailable)")
+            exit(0)
+        }
+        let stack = """
+        # Context stack — 2 items (test)
+
+        ## 1 · Terminal — build log
+        Source: terminal
+        swift build failed
+        error: cannot find 'SystemLanguageModel' in scope
+        note: add an availability guard for macOS 26
+
+        ---
+
+        ## 2 · Zed — LocalLLM.swift
+        Source: /tmp/LocalLLM.swift
+        enum LocalLLM { static var isAvailable: Bool { ... } }
+        // guards FoundationModels behind canImport and #available
+        """
+        var summary: String?
+        var done = false
+        LocalLLM.summarizeStack(stack) { summary = $0; done = true }
+        pump(timeout: 60, until: { done })
+        if let summary {
+            print("summary chars=\(summary.count)")
+            print(summary.split(separator: "\n").prefix(6).joined(separator: "\n"))
+        } else {
+            print("summarization returned nil")
+            exit(1)
+        }
+        // Tagging round trip (respond directly — tagCapture gates on the
+        // contentLearning toggle, which we don't want to flip here).
+        var tags: String?
+        done = false
+        LocalLLM.respond(
+            instructions: "Reply with ONLY comma-separated tags from: "
+                + LocalLLM.tagVocabulary.joined(separator: ", "),
+            prompt: "error: linker command failed\nUndefined symbols for arm64") {
+            tags = $0
+            done = true
+        }
+        pump(timeout: 30, until: { done })
+        print("tag reply: \(tags ?? "nil")")
+        print(summary != nil ? "PASS" : "FAIL")
+        exit(0)
+    }
 
     /// Salience scoring fixtures: chunking, heuristics, git boost, budget,
     /// labels and the adaptive-budget feedback loop.
@@ -281,6 +336,7 @@ enum CLIModes {
     /// Multi-select stack through the production combiner.
     private static func stackTest(app1: String, app2: String, outPath: String) -> Never {
         Delivery.suppressAutoPaste = true
+        CombinedCapture.forceRawDelivery = true
         let entries = [app1, app2].compactMap(makeEntry(query:))
         guard entries.count == 2 else {
             writeOut(outPath, "need two running apps with windows\n")

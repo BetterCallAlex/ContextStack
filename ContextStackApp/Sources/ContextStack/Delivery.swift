@@ -63,6 +63,9 @@ enum Delivery {
         let title = entry.title
         DispatchQueue.global(qos: .utility).async {
             let path = saveCapture(basename: basename, content: full)
+            if let path {
+                LocalLLM.tagCapture(file: URL(fileURLWithPath: path), text: content)
+            }
             notify("ContextStack: \(kind) copied",
                    "\(appName) — \(title) (\(content.count) chars)\n"
                    + "Saved: \(path ?? "not saved")")

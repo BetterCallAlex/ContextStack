@@ -34,22 +34,84 @@ enum CombinedCapture {
                 + "(\(fmt.string(from: Date())))\n\n"
                 + sections.map { $0 ?? "*[capture timed out]*\n" }
                     .joined(separator: "\n---\n\n")
-            Delivery.setClipboard(full)
-            Delivery.maybeAutoPaste()
-            DispatchQueue.global(qos: .utility).async {
-                let stamp = DateFormatter()
-                stamp.dateFormat = "yyyyMMdd-HHmmss"
-                let path = Delivery.saveCapture(
-                    basename: "\(stamp.string(from: Date()))-stack-of-\(entries.count).md",
-                    content: full)
-                Delivery.notify("ContextStack: \(entries.count)-item stack copied",
-                                "Saved: \(path ?? "not saved")")
-            }
+            offerDelivery(full, count: entries.count)
         }
 
         group.notify(queue: .main) { deliver() }
         // Belt and braces: a hung fetch must not swallow the whole stack.
         DispatchQueue.main.asyncAfter(deadline: .now() + overallTimeout) { deliver() }
+    }
+
+    /// CLI test modes bypass the interactive raw-vs-summary chooser.
+    static var forceRawDelivery = false
+
+    /// With the on-device LLM available, the assembled stack offers a
+    /// raw-vs-condensed choice; without it, raw pastes directly as before.
+    private static func offerDelivery(_ full: String, count: Int) {
+        guard LocalLLM.isAvailable, !forceRawDelivery else {
+            deliverRaw(full, count: count)
+            return
+        }
+        let items = [
+            ChooserItem(text: "Paste stack (raw)",
+                        subText: "\(count) sections · \(full.count) chars",
+                        image: ActionID.symbolImage("square.stack.3d.up"), index: 0),
+            ChooserItem(text: "Summarize, then paste",
+                        subText: "Condensed on-device (Apple Intelligence) — nothing leaves the Mac",
+                        image: ActionID.symbolImage("sparkles"), index: 1),
+        ]
+        Chooser.shared.show(items: items, placeholder: "Context stack ready…") { idx in
+            guard let idx else { return }
+            if idx == 0 {
+                deliverRaw(full, count: count)
+                return
+            }
+            Delivery.notify("ContextStack", "Summarizing \(count)-item stack…")
+            LocalLLM.summarizeStack(full) { summary in
+                if let summary {
+                    deliverSummary(summary, full: full, count: count)
+                } else {
+                    Delivery.failure("ContextStack",
+                                     "Summarization failed — pasting the raw stack")
+                    deliverRaw(full, count: count)
+                }
+            }
+        }
+    }
+
+    private static func stamp() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyyMMdd-HHmmss"
+        return fmt.string(from: Date())
+    }
+
+    private static func deliverRaw(_ full: String, count: Int) {
+        Delivery.setClipboard(full)
+        Delivery.maybeAutoPaste()
+        DispatchQueue.global(qos: .utility).async {
+            let name = "\(stamp())-stack-of-\(count).md"
+            let path = Delivery.saveCapture(basename: name, content: full)
+            if let path {
+                LocalLLM.tagCapture(file: URL(fileURLWithPath: path), text: full)
+            }
+            Delivery.notify("ContextStack: \(count)-item stack copied",
+                            "Saved: \(path ?? "not saved")")
+        }
+    }
+
+    private static func deliverSummary(_ summary: String, full: String, count: Int) {
+        let body = "# Context stack — \(count) items (condensed on-device)\n\n" + summary
+        Delivery.setClipboard(body)
+        Delivery.maybeAutoPaste()
+        DispatchQueue.global(qos: .utility).async {
+            let base = stamp()
+            _ = Delivery.saveCapture(basename: "\(base)-stack-of-\(count).md",
+                                     content: full)
+            let path = Delivery.saveCapture(
+                basename: "\(base)-stack-of-\(count)-summary.md", content: body)
+            Delivery.notify("ContextStack: condensed stack copied",
+                            "Summary + full stack saved: \(path ?? "not saved")")
+        }
     }
 
     /// Best text capture for one entry; completion on main with
