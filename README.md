@@ -19,7 +19,10 @@ window, pick what to grab. It's pasted right where you were typing.
 <p align="center"><img src="docs/picker.png" width="680" alt="Recent-windows picker"></p>
 
 **Stack it:** press Tab in the picker to mark several windows — Enter
-captures them all and pastes one combined markdown document.
+captures them all and pastes one combined markdown document. With Apple
+Intelligence available, the stack offers **"Summarize, then paste"**: the
+on-device model condenses it to the essentials (identifiers and error lines
+kept verbatim) before pasting — the full stack is archived alongside.
 
 Pick a window, and ContextStack offers the best captures for what it is —
 with the most likely one already on top, so **Enter-Enter** usually does it:
@@ -34,7 +37,7 @@ with the most likely one already on top, so **Enter-Enter** usually does it:
 | **Document window** (Preview, TextEdit, Xcode, Zed, …) | The file itself: contents, path, or `@path` for Claude Code. Resolved via Accessibility, window title, or Spotlight. |
 | **Remote files over SSH** (Zed, VS Code, Cursor, JetBrains) | Remote file contents — ContextStack works out host and path from the editor's own session data or window title and fetches with `ssh`. |
 | **Any window** | Screenshot (pasteable image + saved PNG) — works even for windows on other Spaces — visible text via Accessibility, or **OCR** — the window's pixels read as text, for apps Accessibility can't see into. |
-| **The relevant lines** | Text you *selected* in the source window (offered on top when a selection exists), or the **visible excerpt** — just what's scrolled into view, not the whole buffer. |
+| **The relevant lines** | Text you *selected* (offered on top when a selection exists), the **visible excerpt** (what's scrolled into view), or the **relevant excerpt** — a scored slice: error lines, your uncommitted git edits, on-topic sections. Its size adapts to your feedback. |
 
 Every capture also lands in `~/ContextStack/` as a timestamped `.md`/`.png`
 with a source header, so Claude Code can read it by path.
@@ -45,11 +48,27 @@ The action list reorders itself around your habits: a tiny on-device model
 (online softmax over context features) learns which capture you pick per
 paste target, per app, and per project or site — one Zed project can settle
 on `@-reference` while another prefers screenshots. It also rides your
-bursts: what you just pasted feeds the next prediction, so five screenshots
-in a row means the sixth is already on top, and recent habits outweigh old
-ones. Better prediction, less selecting. The event log and model never leave
-your machine; toggle *Smart action ranking* in the menu-bar menu, delete one
-file to forget everything.
+bursts (five screenshots in a row means the sixth is already on top),
+treats a quick re-pick as a correction, and highlights the *window* you're
+likely to pick next — recency order stays untouched, only the preselection
+moves. Recent habits outweigh old ones.
+
+Two opt-in signals go further (both off by default, menu toggles): **manual
+copy/paste metadata** (which apps you copy from and paste into — shape flags
+only, never content) and **topic matching** (embeddings over your own
+capture archive, so the window matching what you're currently working on
+ranks higher). Everything stays on your machine; delete a log file to
+forget, toggle off to stop.
+
+## Small conveniences that add up
+
+- **Recent Captures** in the menu re-copies any of your last ten captures.
+- The archive expires itself (`archiveRetentionDays`, default 7; 0 keeps
+  forever).
+- Browser tabs are remembered at focus time — a tab you closed (or a browser
+  you quit) can still yield its link and page text.
+- The hotkey is yours: `defaults write cloud.alexrank.ContextStack hotkey
+  -string "cmd+shift+k"`.
 
 ## Privacy, by construction
 
@@ -101,9 +120,8 @@ Build internals, config knobs, debug tooling, troubleshooting:
 
 ## Roadmap
 
-Browser-extension companion (exact tab identity, Firefox) · prefetch on
-focus so closed tabs survive · pinned entries & multi-select · OCR for
-screenshots.
+Browser-extension companion (exact tab identity, Firefox) · pinned entries ·
+LLM tags as ranking features once they earn their weight on real usage.
 
 ## License
 

@@ -78,6 +78,10 @@ Debug helpers (no GUI): `--remote-selftest` (parser fixtures),
 `open -n -W ... --args` so TCC grants apply); `--shot-test <app>` exercises
 the production screenshot path.
 
+> Deep engineering docs (decisions, gotchas, per-feature notes) live in
+> [`docs/`](../docs/index.md) — one note per feature, kept current on every
+> feature commit.
+
 ## Learned action ranking
 
 The action chooser reorders itself around your habits: the model predicts
