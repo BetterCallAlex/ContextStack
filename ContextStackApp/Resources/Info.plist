@@ -4,31 +4,31 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>ContextStack</string>
 	<key>CFBundleExecutable</key>
 	<string>ContextStack</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>cloud.alexrank.ContextStack</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>ContextStack</string>
-	<key>CFBundleDisplayName</key>
-	<string>ContextStack</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
+	<string>0.3.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>3</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSHighResolutionCapable</key>
-	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>ContextStack reads the URL, title and content of browser tabs you explicitly pick in the capture picker.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 </dict>
 </plist>
