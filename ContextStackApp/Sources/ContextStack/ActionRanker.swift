@@ -36,66 +36,51 @@ struct RankContext {
 /// Learns which capture action the user picks in which context, to put the
 /// most likely one on top of the action chooser (Enter-Enter gets smarter).
 ///
-/// Model: a single-layer softmax network (online multinomial logistic
-/// regression) over hashed sparse features, trained with one SGD step per
-/// observed pick. The softmax is masked to the actions actually presented
-/// for that entry type. The global → per-app → per-project hierarchy is
-/// encoded in the features themselves:
+/// The model is a [PointwiseSoftmaxModel] over hashed features; each action
+/// class owns a row of the weight matrix, expressed as per-candidate feature
+/// offsets. The global → per-app → per-project hierarchy is encoded in the
+/// features themselves:
 ///
 ///   bias                        → global trend
 ///   src / tgt / kind            → per-app trends
 ///   tgt×src, tgt×kind, src×kind → pairings ("into Claude paste images,
 ///                                 into the terminal paste @paths")
 ///   tok, src×tok                → within-app context (project names, sites)
+///   sel, sel×src, sel×tgt       → selection as a learned signal
 ///   hour bucket                 → mild time-of-day signal
 ///
-/// Unseen contexts back off to whatever coarser features have learned —
-/// cold start degrades smoothly to the app-level and global answer.
-///
-/// Beyond the static context, the model sees *sequence* features — what was
-/// just captured: the previous action within a 30-minute session (pastes
-/// cluster in bursts), the previous action for the same source app within a
-/// longer window, and the bigram of previous action × current entry kind.
-/// The sequence state is reconstructed from event order during replay and
-/// tracked live afterwards — no log schema change.
-///
-/// The append-only event log is the source of truth; weights are a cache
-/// rebuilt by replaying the log at launch, so the feature set can change
-/// between versions without losing data. Replay is recency-weighted
-/// (30-day half-life, floored) so old habits fade as new ones form.
+/// Sequence features (previous pick in-session / per-source, prev×kind
+/// bigram) ride on top; pastes cluster in bursts. Re-picking the same
+/// window within seconds with a different action relabels the previous
+/// pick (correction). The event log is the source of truth; weights are a
+/// cache rebuilt by recency-weighted replay at launch.
 final class ActionRanker {
-    static let shared = ActionRanker(eventsURL: defaultEventsURL())
+    static let shared = ActionRanker(eventsURL: EventLogFile(filename: "action-events.jsonl").url)
 
     private static let dims = 4096
-    private static let learningRate: Float = 0.15
-    private static let maxReplayEvents = 5000
     /// "Session" window for the global previous-action feature.
     private static let sessionGap: TimeInterval = 30 * 60
     /// Window for the per-source previous-action feature.
     private static let sourceGap: TimeInterval = 6 * 3600
-    /// Recency weighting of replayed events.
-    private static let replayHalfLife: TimeInterval = 30 * 24 * 3600
-    private static let replayWeightFloor: Float = 0.25
+    /// Re-picking the same window within this window with a different action
+    /// means the first pick was a mistake — relabel it.
+    private static let correctionGap: TimeInterval = 30
+    private static let correctionWeight: Float = 0.7
     private static let classIndex: [ActionID: Int] = Dictionary(
         uniqueKeysWithValues: ActionID.allCases.enumerated().map { ($1, $0) })
 
-    /// Flat [class][dim] weight matrix.
-    private var weights = [Float](repeating: 0,
-                                  count: ActionID.allCases.count * dims)
+    private var model = PointwiseSoftmaxModel(
+        weightCount: ActionID.allCases.count * dims)
     private(set) var eventCount = 0
     private var sourceCounts: [String: Int] = [:]
     private var lastGlobal: (action: ActionID, time: Date)?
     private var lastPerSource: [String: (action: ActionID, time: Date)] = [:]
     /// For correction detection: the previous pick in full, including the
-    /// exact feature indices it trained on — the relabel must touch the same
-    /// weights, and the sequence state has moved on by correction time.
+    /// exact candidate feature sets it trained on — the relabel must touch
+    /// the same weights, and the sequence state has moved on by then.
     private var lastPick: (context: RankContext, presented: [ActionID],
-                           chosen: ActionID, time: Date, features: [Int])?
-    /// Re-picking the same window within this window with a different action
-    /// means the first pick was a mistake — relabel it.
-    private static let correctionGap: TimeInterval = 30
-    private static let correctionWeight: Float = 0.7
-    private let eventsURL: URL?
+                           chosen: ActionID, time: Date, candidates: [[Int]])?
+    private let log: EventLogFile
 
     struct Event: Codable {
         let v: Int
@@ -113,17 +98,8 @@ final class ActionRanker {
 
     /// Pass nil for an in-memory ranker (tests).
     init(eventsURL: URL?) {
-        self.eventsURL = eventsURL
+        log = EventLogFile(url: eventsURL)
         if eventsURL != nil { replayLog() }
-    }
-
-    private static func defaultEventsURL() -> URL? {
-        guard let base = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask).first
-        else { return nil }
-        let dir = base.appendingPathComponent("ContextStack", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("action-events.jsonl")
     }
 
     // ------------------------------------------------------------- features
@@ -149,15 +125,8 @@ final class ActionRanker {
         return out
     }
 
-    /// FNV-1a — Swift's Hasher is seeded per process, so it can't be used
-    /// for weights that must line up across replays.
     private static func hashIndex(_ name: String) -> Int {
-        var h: UInt64 = 0xcbf2_9ce4_8422_2325
-        for b in name.utf8 {
-            h ^= UInt64(b)
-            h = h &* 0x0000_0100_0000_01b3
-        }
-        return Int(h % UInt64(dims))
+        LearningCore.hashIndex(name, dims: dims)
     }
 
     private static func features(_ c: RankContext) -> [Int] {
@@ -198,58 +167,44 @@ final class ActionRanker {
         return names.map(Self.hashIndex)
     }
 
-    private func activeFeatures(_ c: RankContext, at time: Date) -> [Int] {
-        Self.features(c) + sequenceFeatures(c, at: time)
+    /// One candidate feature set per presented action: the shared context
+    /// features offset into that action's row of the weight matrix.
+    private func candidates(_ c: RankContext, presented: [ActionID],
+                            at time: Date) -> [[Int]] {
+        let feats = Self.features(c) + sequenceFeatures(c, at: time)
+        return presented.map { action in
+            let base = Self.classIndex[action]! * Self.dims
+            return feats.map { base + $0 }
+        }
     }
 
     // ---------------------------------------------------------------- model
 
-    private func score(class c: Int, features: [Int]) -> Float {
-        var s: Float = 0
-        let base = c * Self.dims
-        for f in features { s += weights[base + f] }
-        return s
-    }
-
     /// Softmax over the presented actions only.
     func probabilities(context: RankContext, presented: [ActionID],
                        at time: Date = Date()) -> [ActionID: Float] {
-        probabilities(features: activeFeatures(context, at: time), presented: presented)
+        let probs = model.probabilities(
+            candidates: candidates(context, presented: presented, at: time))
+        return Dictionary(uniqueKeysWithValues: zip(presented, probs))
     }
 
-    private func probabilities(features feats: [Int],
-                               presented: [ActionID]) -> [ActionID: Float] {
-        let raw = presented.map { score(class: Self.classIndex[$0]!, features: feats) }
-        let maxRaw = raw.max() ?? 0
-        let exps = raw.map { expf($0 - maxRaw) }
-        let sum = max(exps.reduce(0, +), .leastNormalMagnitude)
-        var out: [ActionID: Float] = [:]
-        for (i, a) in presented.enumerated() { out[a] = exps[i] / sum }
-        return out
-    }
-
-    /// One SGD step of masked-softmax cross-entropy, then advance the
-    /// sequence state (the pick becomes the next event's "previous").
+    /// One SGD step toward the pick, then advance the sequence state and
+    /// apply a correction relabel when this pick contradicts the previous
+    /// one on the same window seconds earlier.
     private func train(context: RankContext, presented: [ActionID],
                        chosen: ActionID, at time: Date, weight: Float) {
-        guard presented.contains(chosen) else { return }
-        let feats = activeFeatures(context, at: time)
-        let probs = probabilities(context: context, presented: presented, at: time)
-        for a in presented {
-            let gradient = probs[a]! - (a == chosen ? 1 : 0)
-            let step = Self.learningRate * weight * gradient
-            let base = Self.classIndex[a]! * Self.dims
-            for f in feats { weights[base + f] -= step }
-        }
+        guard let chosenIndex = presented.firstIndex(of: chosen) else { return }
+        let cands = candidates(context, presented: presented, at: time)
+        model.train(candidates: cands, chosen: chosenIndex, weight: weight)
         eventCount += 1
         sourceCounts[context.sourceBundleID, default: 0] += 1
         lastGlobal = (chosen, time)
         lastPerSource[context.sourceBundleID] = (chosen, time)
 
-        // Correction: same window, seconds later, different action — the
-        // previous pick was wrong. Relabel it with the corrected action
-        // (reduced weight; derived purely from event order, so replay
-        // applies the same corrections with no schema change).
+        // Correction: same window, same target and selection state, seconds
+        // later, different action — the previous pick was wrong. Relabel it
+        // with the corrected action (reduced weight; derived purely from
+        // event order, so replay applies the same corrections).
         if let prev = lastPick,
            time.timeIntervalSince(prev.time) < Self.correctionGap,
            prev.context.sourceBundleID == context.sourceBundleID,
@@ -257,16 +212,11 @@ final class ActionRanker {
            prev.context.titleTokens == context.titleTokens,
            prev.context.hasSelection == context.hasSelection,
            prev.chosen != chosen,
-           prev.presented.contains(chosen) {
-            let probs = probabilities(features: prev.features, presented: prev.presented)
-            for a in prev.presented {
-                let gradient = probs[a]! - (a == chosen ? 1 : 0)
-                let step = Self.learningRate * Self.correctionWeight * gradient
-                let base = Self.classIndex[a]! * Self.dims
-                for f in prev.features { weights[base + f] -= step }
-            }
+           let correctedIndex = prev.presented.firstIndex(of: chosen) {
+            model.train(candidates: prev.candidates, chosen: correctedIndex,
+                        weight: Self.correctionWeight)
         }
-        lastPick = (context, presented, chosen, time, feats)
+        lastPick = (context, presented, chosen, time, cands)
     }
 
     /// How many picks the model has seen from this source app.
@@ -297,31 +247,16 @@ final class ActionRanker {
                           sel: context.hasSelection,
                           presented: presented.map(\.rawValue),
                           chosen: chosen.rawValue)
-        appendToLog(event)
+        log.append(event)
         train(context: context, presented: presented, chosen: chosen,
               at: Date(), weight: 1)
     }
 
-    private func appendToLog(_ event: Event) {
-        guard let eventsURL, let data = try? JSONEncoder().encode(event) else { return }
-        if !FileManager.default.fileExists(atPath: eventsURL.path) {
-            FileManager.default.createFile(atPath: eventsURL.path, contents: nil)
-        }
-        guard let handle = try? FileHandle(forWritingTo: eventsURL) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: data + Data("\n".utf8))
-    }
-
     private func replayLog() {
-        guard let eventsURL,
-              let raw = try? String(contentsOf: eventsURL, encoding: .utf8)
-        else { return }
         let decoder = JSONDecoder()
         let now = Date().timeIntervalSince1970
-        let lines = raw.split(separator: "\n").suffix(Self.maxReplayEvents)
-        for line in lines {
-            guard let event = try? decoder.decode(Event.self, from: Data(line.utf8)),
+        for line in log.replayLines() {
+            guard let event = try? decoder.decode(Event.self, from: line),
                   let chosen = ActionID(rawValue: event.chosen) else { continue }
             let context = RankContext(targetBundleID: event.target,
                                       sourceBundleID: event.source,
@@ -330,11 +265,9 @@ final class ActionRanker {
                                       hourBucket: event.hour,
                                       hasSelection: event.sel ?? false)
             let presented = event.presented.compactMap(ActionID.init(rawValue:))
-            let age = max(0, now - event.ts)
-            let weight = max(Self.replayWeightFloor,
-                             exp2f(Float(-age / Self.replayHalfLife)))
             train(context: context, presented: presented, chosen: chosen,
-                  at: Date(timeIntervalSince1970: event.ts), weight: weight)
+                  at: Date(timeIntervalSince1970: event.ts),
+                  weight: LearningCore.replayWeight(ageSeconds: now - event.ts))
         }
         if eventCount > 0 {
             csLog("ranker replayed \(eventCount) events")

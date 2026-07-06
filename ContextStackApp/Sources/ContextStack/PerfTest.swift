@@ -6,7 +6,7 @@ import ApplicationServices
 /// appearing, against a real running app. Run via `open -n -W ... --args`
 /// so Accessibility applies.
 enum PerfTest {
-    static func run(appQuery: String, outPath: String) {
+    @MainActor static func run(appQuery: String, outPath: String) {
         var out: [String] = []
         func log(_ s: String) {
             out.append(s)

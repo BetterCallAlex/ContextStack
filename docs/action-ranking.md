@@ -7,6 +7,12 @@ updated: 2026-07-06
 
 # action-ranking
 
+**Substrate** ([[LearningCore.swift]]): both heads (and future ones) share
+one `PointwiseSoftmaxModel` (hashed features → softmax over presented
+candidates → SGD), `EventLogFile` (jsonl append + replay lines) and the
+FNV hash / recency decay. A fixed-class head is the pointwise form with
+per-class feature offsets — the math exists once.
+
 **Does:** two learned heads. `ActionRanker` reorders the action chooser (top
 row = Enter-Enter default); `WindowRanker` moves the picker's preselection
 highlight (never the order — recency is muscle memory).
@@ -58,6 +64,7 @@ highlight (never the order — recency is muscle memory).
 **Links:** [[picker]], [[selection-viewport]]
 
 ## Changelog
+- 2026-07-07 — Both rankers rebuilt on shared LearningCore; verified byte-identical selftest + eval-log output.
 - 2026-07-06 — Opt-in clipboard metadata observer; mcopy window features.
 - 2026-07-06 — Selection as learned feature in both heads; new WindowRanker
   preselecting the picker highlight. Selftests: sel-flip 100%,

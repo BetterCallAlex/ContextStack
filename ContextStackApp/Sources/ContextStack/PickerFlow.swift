@@ -30,6 +30,8 @@ extension ActionID {
 }
 
 /// The two-stage picker: recent windows → capture actions for the picked one.
+/// Main-actor: drives panels and reads main-confined caches.
+@MainActor
 enum PickerFlow {
     struct Action {
         let id: ActionID

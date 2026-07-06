@@ -15,8 +15,8 @@ enum TopicModel {
     private static let sessionWindow: TimeInterval = 2 * 3600
     private static let maxCaptures = 10
     private static let snippetChars = 1000
-    /// Main-thread confined — read and written on main only.
-    private static var topicCache: (vector: [Double], at: Date)?
+    /// Compiler-enforced main confinement.
+    @MainActor private static var topicCache: (vector: [Double], at: Date)?
 
     private static let embedding: NLEmbedding? = NLEmbedding.sentenceEmbedding(for: .english)
     /// NLEmbedding isn't documented thread-safe and we call it from the
@@ -53,7 +53,7 @@ enum TopicModel {
 
     /// Mean embedding of the session's recent pastes; cached 60 s.
     /// Main thread only.
-    static func topicVector() -> [Double]? {
+    @MainActor static func topicVector() -> [Double]? {
         guard Config.contentLearning else { return nil }
         if let c = topicCache, Date().timeIntervalSince(c.at) < 60 { return c.vector }
         return nil
@@ -61,7 +61,7 @@ enum TopicModel {
 
     /// True while the cache is fresh — callers check this on main before
     /// dispatching a refresh.
-    static var topicIsFresh: Bool {
+    @MainActor static var topicIsFresh: Bool {
         if let c = topicCache, Date().timeIntervalSince(c.at) < 60 { return true }
         return false
     }
@@ -81,7 +81,7 @@ enum TopicModel {
             if let v = vector(for: body.isEmpty ? text : body) { vectors.append(v) }
         }
         guard let dim = vectors.first?.count else {
-            DispatchQueue.main.async { topicCache = nil }
+            Task { @MainActor in topicCache = nil }
             return
         }
         var mean = [Double](repeating: 0, count: dim)
@@ -89,14 +89,14 @@ enum TopicModel {
             for i in 0..<dim { mean[i] += v[i] }
         }
         for i in 0..<dim { mean[i] /= Double(vectors.count) }
-        DispatchQueue.main.async { topicCache = (mean, Date()) }
+        Task { @MainActor in topicCache = (mean, Date()) }
     }
 
     // ------------------------------------------------------------- features
 
     /// Bucketed similarity — a hashed feature name the ranker learns weights
     /// for, or nil when content learning is off / no data.
-    static func bucket(candidateVector: [Double]?) -> String? {
+    @MainActor static func bucket(candidateVector: [Double]?) -> String? {
         guard let topic = topicVector(), let candidate = candidateVector else { return nil }
         let sim = cosine(topic, candidate)
         if sim > 0.6 { return "high" }

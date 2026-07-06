@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupStatusItem()
 
         FocusTracker.shared.start()
-        hotkey.onHotkey = { PickerFlow.showMainPicker() }
+        hotkey.onHotkey = { MainActor.assumeIsolated { PickerFlow.showMainPicker() } }
         hotkey.register(spec: Config.hotkey)
 
         let firstRun = !UserDefaults.standard.bool(forKey: "onboardingShown")
@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showPicker() {
-        PickerFlow.showMainPicker()
+        MainActor.assumeIsolated { PickerFlow.showMainPicker() }
     }
 
     @objc private func toggleAutoPaste() {

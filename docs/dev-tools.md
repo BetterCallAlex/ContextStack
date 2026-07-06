@@ -7,7 +7,7 @@ updated: 2026-07-06
 
 # dev-tools
 
-**Does:** CLI modes on the app binary for testing without UI. Selftests are
+**Does:** CLI modes on the app binary (dispatch + shared rig in [[CLIModes.swift]]) for testing without UI. Selftests are
 deterministic (CI release gate); live tools need the app's TCC grants — run
 via `open -n -W /Applications/ContextStack.app --args <flag>` (LaunchServices
 launch = correct TCC identity; direct exec from a shell is untrusted).
@@ -36,4 +36,5 @@ launch = correct TCC identity; direct exec from a shell is untrusted).
 **Links:** [[remote-ssh]], [[screenshots]], [[picker]]
 
 ## Changelog
+- 2026-07-07 — Modes extracted from main.swift into CLIModes (shared entry/pump/out helpers).
 - 2026-07-06 — Initial note; state as of a744b63.
