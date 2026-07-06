@@ -9,7 +9,9 @@ commit a feature change or bug fix:**
 1. Reconcile the affected note(s) in `docs/` — fix stale claims in place,
    don't append duplicates. New feature → new note from the existing pattern.
 2. Add one dated changelog line per touched note (what + why + commit).
-3. Bump `last_documented_commit` + `last_documented` in `docs/index.md`.
+3. Bump `last_documented_commit` + `last_documented` in `docs/index.md` —
+   always in a separate follow-up commit, never via `--amend` (amending
+   changes the hash the marker just recorded).
 
 Docs describe decisions and gotchas, not code restated. The commit message
 carries the why — put it in the note too.
