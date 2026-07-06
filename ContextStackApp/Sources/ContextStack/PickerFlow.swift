@@ -1,12 +1,56 @@
 import AppKit
 
+/// One glyph per capture method so the action list scans at a glance.
+/// SF Symbols: system-native, template-tinted, no drawn assets.
+extension ActionID {
+    var symbolName: String {
+        switch self {
+        case .pageText: return "doc.plaintext"
+        case .linkMarkdown: return "link"
+        case .fullHTML: return "chevron.left.forwardslash.chevron.right"
+        case .filePath: return "folder"
+        case .atReference: return "at"
+        case .fileContents: return "doc.text"
+        case .screenshotClipboard: return "camera.viewfinder"
+        case .screenshotPath: return "camera.on.rectangle"
+        case .windowText: return "text.viewfinder"
+        case .titleLine: return "textformat"
+        case .selectedText: return "highlighter"
+        case .visibleExcerpt: return "eye"
+        }
+    }
+
+    static func symbolImage(_ name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+    }
+
+    var icon: NSImage? { Self.symbolImage(symbolName) }
+}
+
 /// The two-stage picker: recent windows → capture actions for the picked one.
 enum PickerFlow {
     struct Action {
         let id: ActionID
         let text: String
         let subText: String
+        /// Symbol override for variants (SSH fetch, Spotlight locate);
+        /// nil = the ActionID's default glyph.
+        var symbol: String?
         let run: () -> Void
+
+        init(id: ActionID, text: String, subText: String,
+             symbol: String? = nil, run: @escaping () -> Void) {
+            self.id = id
+            self.text = text
+            self.subText = subText
+            self.symbol = symbol
+            self.run = run
+        }
+
+        var icon: NSImage? {
+            symbol.flatMap(ActionID.symbolImage) ?? id.icon
+        }
     }
 
     static func showMainPicker() {
@@ -82,7 +126,7 @@ enum PickerFlow {
                                   hasSelection: resolution.selection != nil)
         let actions = ranked(actionsFor(entry, resolution), context: context)
         let items = actions.enumerated().map { i, a in
-            ChooserItem(text: a.text, subText: a.subText, image: nil, index: i)
+            ChooserItem(text: a.text, subText: a.subText, image: a.icon, index: i)
         }
         Chooser.shared.show(items: items,
                             placeholder: "\(entry.appName) — \(entry.title)") { idx in
@@ -119,7 +163,8 @@ enum PickerFlow {
         else { return sorted }
         var marked = sorted
         marked[0] = Action(id: top.id, text: top.text,
-                           subText: top.subText + "  · learned", run: top.run)
+                           subText: top.subText + "  · learned",
+                           symbol: top.symbol, run: top.run)
         return marked
     }
 
@@ -175,6 +220,7 @@ enum PickerFlow {
                 id: .fileContents,
                 text: "File contents (over SSH)",
                 subText: "Remote file — fetched from \(remote.displayHost) via your SSH connection",
+                symbol: "network",
                 run: { deliverRemoteContents(remote, entry: entry) }))
             if let exact = remote.exactPath {
                 let short = exact
@@ -193,6 +239,7 @@ enum PickerFlow {
                     id: .filePath,
                     text: "File path (over SSH)",
                     subText: "Locate the file on \(remote.displayHost), copy its remote path",
+                    symbol: "magnifyingglass",
                     run: {
                         RemoteFileCapture.retrieve(remote) { _, path, err in
                             if let path {
@@ -232,6 +279,7 @@ enum PickerFlow {
                 text: "File contents — '\(candidate.filename)'",
                 subText: "Locate by window title (Spotlight) and copy the file text; "
                     + "falls back to window text",
+                symbol: "doc.text.magnifyingglass",
                 run: {
                     DocumentCapture.resolveViaSpotlight(candidate) { path in
                         if let path {
@@ -248,6 +296,7 @@ enum PickerFlow {
                 id: .filePath,
                 text: "File path — locate '\(candidate.filename)'",
                 subText: "Locate by window title (Spotlight), copy the path",
+                symbol: "magnifyingglass",
                 run: {
                     DocumentCapture.resolveViaSpotlight(candidate) { path in
                         if let path { deliverPath(path) } else { notifyNotFound(candidate) }

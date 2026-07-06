@@ -21,7 +21,7 @@ window, pick what to grab. It's pasted right where you were typing.
 Pick a window, and ContextStack offers the best captures for what it is —
 with the most likely one already on top, so **Enter-Enter** usually does it:
 
-<p align="center"><img src="docs/actions.png" width="680" alt="Capture actions for a Zed SSH file"></p>
+<p align="center"><img src="docs/actions.png" width="580" alt="Capture actions for a Zed SSH file"></p>
 
 ## What it can grab
 

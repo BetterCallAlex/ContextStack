@@ -38,24 +38,24 @@ enum UIShots {
         ]
 
         let actionItems = [
+            ChooserItem(text: "Selected text",
+                        subText: "“def bot_activity(df: pl.DataFrame) -> pl.DataFrame: …”",
+                        image: ActionID.symbolImage("highlighter"), index: 0),
             ChooserItem(text: "File contents (over SSH)",
                         subText: "Remote file — fetched via your Zed SSH connection  · learned",
-                        image: nil, index: 0),
+                        image: ActionID.symbolImage("network"), index: 1),
             ChooserItem(text: "@-reference (Claude Code)",
                         subText: "Copy '@/home/alex/thesis/notebooks_own/01_eda.py'",
-                        image: nil, index: 1),
-            ChooserItem(text: "File path",
-                        subText: "Copy the document's path",
-                        image: nil, index: 2),
+                        image: ActionID.symbolImage("at"), index: 2),
+            ChooserItem(text: "Visible excerpt",
+                        subText: "The lines around Zed's last saved scroll position",
+                        image: ActionID.symbolImage("eye"), index: 3),
             ChooserItem(text: "Screenshot → clipboard",
                         subText: "Window snapshot as image + saved PNG",
-                        image: nil, index: 3),
+                        image: ActionID.symbolImage("camera.viewfinder"), index: 4),
             ChooserItem(text: "Screenshot → file path",
                         subText: "Snapshot saved as PNG, its path copied (for Claude Code)",
-                        image: nil, index: 4),
-            ChooserItem(text: "Title line",
-                        subText: "Copy 'App — window title' as plain text",
-                        image: nil, index: 5),
+                        image: ActionID.symbolImage("camera.on.rectangle"), index: 5),
         ]
 
         Chooser.shared.show(items: pickerItems, placeholder: "Recent windows…") { _ in }

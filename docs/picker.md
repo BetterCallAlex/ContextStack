@@ -41,7 +41,12 @@ updated: 2026-07-06
 
 **Links:** [[action-ranking]], [[delivery]]
 
+**Action icons:** one SF Symbol per method (`ActionID.symbolName` in
+[[PickerFlow.swift]]); variants override (SSH fetch → `network`, Spotlight
+locate → `magnifyingglass`). Template-tinted, no drawn assets.
+
 ## Changelog
+- 2026-07-06 — SF Symbol per action row; variant overrides for SSH/Spotlight.
 - 2026-07-06 — Window preselection: learned highlight ([[WindowRanker.swift]]),
   recency order untouched; `· likely` badge on predicted row (0a0e257).
 - 2026-07-06 — Initial note; state as of a744b63.
